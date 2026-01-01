@@ -1,0 +1,12 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "fp-camera-settle",
+  "version-semver": "1.0.0",
+  "description": "SKSE plugin that adds spring interpolation camera settle effect to first-person camera after player actions",
+  "dependencies": [
+    "spdlog",
+    "simpleini",
+    "rapidcsv"
+  ]
+}
+

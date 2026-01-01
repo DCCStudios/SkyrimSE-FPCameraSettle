@@ -1,0 +1,93 @@
+# ===================
+# Build Directories
+# ===================
+build/
+out/
+x64/
+x86/
+
+# ===================
+# Compiled Output
+# ===================
+# Keep source INI for reference, ignore compiled output
+Compile/
+
+# ===================
+# CMake
+# ===================
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+Testing/
+_deps/
+CMakeUserPresets.json
+CMakeLists.txt.user
+
+# ===================
+# vcpkg
+# ===================
+# Downloaded packages (rebuilt during cmake configure)
+vcpkg_installed/
+
+# ===================
+# Visual Studio
+# ===================
+.vs/
+*.vcxproj.user
+*.suo
+*.sdf
+*.opensdf
+*.cachefile
+*.VC.db
+*.VC.VC.opendb
+
+# Build artifacts
+*.ilk
+*.pdb
+*.iobj
+*.ipdb
+*.obj
+*.lib
+*.exp
+*.dll
+*.exe
+
+# ===================
+# CLion / JetBrains
+# ===================
+.idea/
+cmake-build-*/
+
+# ===================
+# VS Code
+# ===================
+.vscode/
+*.code-workspace
+
+# ===================
+# OS Files
+# ===================
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+
+# ===================
+# Temporary / Logs
+# ===================
+*.log
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*~
+
+# ===================
+# Crashlogs (user-specific)
+# ===================
+crash-*.log
