@@ -302,6 +302,9 @@ void Settings::Load()
 	enabled = ini.GetBoolValue("General", "bEnabled", enabled);
 	globalIntensity = static_cast<float>(ini.GetDoubleValue("General", "fGlobalIntensity", globalIntensity));
 	smoothingFactor = static_cast<float>(ini.GetDoubleValue("General", "fSmoothingFactor", smoothingFactor));
+	resetOnPause = ini.GetBoolValue("General", "bResetOnPause", resetOnPause);
+	springSubsteps = static_cast<int>(ini.GetLongValue("General", "iSpringSubsteps", springSubsteps));
+	springSubsteps = std::clamp(springSubsteps, 1, 8);
 	
 	// Load weapon state settings
 	weaponDrawnEnabled = ini.GetBoolValue("WeaponState", "bWeaponDrawnEnabled", weaponDrawnEnabled);
@@ -313,13 +316,6 @@ void Settings::Load()
 	settleDelay = static_cast<float>(ini.GetDoubleValue("Settling", "fSettleDelay", settleDelay));
 	settleSpeed = static_cast<float>(ini.GetDoubleValue("Settling", "fSettleSpeed", settleSpeed));
 	settleDampingMult = static_cast<float>(ini.GetDoubleValue("Settling", "fSettleDampingMult", settleDampingMult));
-	
-	// Load performance settings
-	springSubsteps = static_cast<int>(ini.GetLongValue("Performance", "iSpringSubsteps", springSubsteps));
-	springSubsteps = std::clamp(springSubsteps, 1, 8);
-	
-	// Load behavior settings
-	resetOnPause = ini.GetBoolValue("Behavior", "bResetOnPause", resetOnPause);
 	
 	// Load debug settings
 	debugLogging = ini.GetBoolValue("Debug", "bDebugLogging", debugLogging);
@@ -385,6 +381,8 @@ void Settings::Save()
 	ini.SetBoolValue("General", "bEnabled", enabled, "; Master toggle for all camera settle effects");
 	ini.SetDoubleValue("General", "fGlobalIntensity", globalIntensity, "; Global intensity multiplier (1.0 = normal)");
 	ini.SetDoubleValue("General", "fSmoothingFactor", smoothingFactor, "; Input smoothing (0 = none, 1 = maximum)");
+	ini.SetBoolValue("General", "bResetOnPause", resetOnPause, "; Reset camera springs when game is paused (menus, console, etc.)");
+	ini.SetLongValue("General", "iSpringSubsteps", springSubsteps, "; Number of physics sub-steps per frame (1-8, higher = more stable but slower)");
 	
 	// Weapon state settings
 	ini.SetBoolValue("WeaponState", "bWeaponDrawnEnabled", weaponDrawnEnabled, "; Enable effects when weapon is drawn");
@@ -396,12 +394,6 @@ void Settings::Save()
 	ini.SetDoubleValue("Settling", "fSettleDelay", settleDelay, "; Delay before settling starts (seconds)");
 	ini.SetDoubleValue("Settling", "fSettleSpeed", settleSpeed, "; How fast settling occurs");
 	ini.SetDoubleValue("Settling", "fSettleDampingMult", settleDampingMult, "; Max damping multiplier when settled");
-	
-	// Performance settings
-	ini.SetLongValue("Performance", "iSpringSubsteps", springSubsteps, "; Number of physics sub-steps per frame (1-8, higher = more stable but slower)");
-	
-	// Behavior settings
-	ini.SetBoolValue("Behavior", "bResetOnPause", resetOnPause, "; Reset camera springs when game is paused (menus, console, etc.) to prevent jarring jumps on unpause");
 	
 	// Debug settings
 	ini.SetBoolValue("Debug", "bDebugLogging", debugLogging, "; Enable detailed debug logging");

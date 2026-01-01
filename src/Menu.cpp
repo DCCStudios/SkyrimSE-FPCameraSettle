@@ -154,6 +154,30 @@ namespace Menu
 				"Input smoothing (0 = no smoothing, 1 = maximum)")) {
 				MarkSettingsChanged();
 			}
+			
+			ImGui::Spacing();
+			
+			if (CheckboxWithTooltip("Reset on Pause", &settings->resetOnPause,
+				"Reset camera springs when the game is paused (menus, console, etc.).\n\n"
+				"When enabled, opening any menu will smoothly reset the camera,\n"
+				"preventing jarring jumps when you close the menu.")) {
+				MarkSettingsChanged();
+			}
+			
+			ImGui::Spacing();
+			ImGui::Separator();
+			ImGui::Text("Performance:");
+			
+			if (SliderIntWithTooltip("Spring Substeps", &settings->springSubsteps, 1, 8, "%d",
+				"Number of physics sub-steps per frame.\n\n"
+				"Higher values = more stable/accurate spring physics\n"
+				"Lower values = better performance\n\n"
+				"1-2: Fast, may be jittery with large movements\n"
+				"3-4: Balanced (recommended)\n"
+				"5-8: Very stable, higher CPU cost")) {
+				settings->springSubsteps = std::clamp(settings->springSubsteps, 1, 8);
+				MarkSettingsChanged();
+			}
 		} else {
 			State::generalExpanded = false;
 		}
@@ -221,30 +245,6 @@ namespace Menu
 			
 			if (SliderFloatWithTooltip("Settle Damping Mult", &settings->settleDampingMult, 1.0f, 10.0f, "%.1fx",
 				"Maximum damping multiplier when fully settled")) {
-				MarkSettingsChanged();
-			}
-			
-			ImGui::Spacing();
-			
-			if (CheckboxWithTooltip("Reset on Pause", &settings->resetOnPause,
-				"Reset camera springs when the game is paused (menus, console, etc.).\n\n"
-				"When enabled, opening any menu will smoothly reset the camera,\n"
-				"preventing jarring jumps when you close the menu.")) {
-				MarkSettingsChanged();
-			}
-			
-			ImGui::Spacing();
-			ImGui::Separator();
-			ImGui::Text("Performance:");
-			
-			if (SliderIntWithTooltip("Spring Substeps", &settings->springSubsteps, 1, 8, "%d",
-				"Number of physics sub-steps per frame.\n\n"
-				"Higher values = more stable/accurate spring physics\n"
-				"Lower values = better performance\n\n"
-				"1-2: Fast, may be jittery with large movements\n"
-				"3-4: Balanced (recommended)\n"
-				"5-8: Very stable, higher CPU cost")) {
-				settings->springSubsteps = std::clamp(settings->springSubsteps, 1, 8);
 				MarkSettingsChanged();
 			}
 		} else {
