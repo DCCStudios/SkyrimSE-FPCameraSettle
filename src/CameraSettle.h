@@ -137,6 +137,7 @@ namespace CameraSettle
 		// State tracking
 		bool isInFirstPerson{ false };
 		bool wasWeaponDrawn{ false };
+		bool wasGamePaused{ false };
 		bool wasSprinting{ false };
 		bool wasSneaking{ false };
 		bool wasInAir{ false };

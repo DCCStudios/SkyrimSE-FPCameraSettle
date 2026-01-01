@@ -318,6 +318,9 @@ void Settings::Load()
 	springSubsteps = static_cast<int>(ini.GetLongValue("Performance", "iSpringSubsteps", springSubsteps));
 	springSubsteps = std::clamp(springSubsteps, 1, 8);
 	
+	// Load behavior settings
+	resetOnPause = ini.GetBoolValue("Behavior", "bResetOnPause", resetOnPause);
+	
 	// Load debug settings
 	debugLogging = ini.GetBoolValue("Debug", "bDebugLogging", debugLogging);
 	debugOnScreen = ini.GetBoolValue("Debug", "bDebugOnScreen", debugOnScreen);
@@ -396,6 +399,9 @@ void Settings::Save()
 	
 	// Performance settings
 	ini.SetLongValue("Performance", "iSpringSubsteps", springSubsteps, "; Number of physics sub-steps per frame (1-8, higher = more stable but slower)");
+	
+	// Behavior settings
+	ini.SetBoolValue("Behavior", "bResetOnPause", resetOnPause, "; Reset camera springs when game is paused (menus, console, etc.) to prevent jarring jumps on unpause");
 	
 	// Debug settings
 	ini.SetBoolValue("Debug", "bDebugLogging", debugLogging, "; Enable detailed debug logging");

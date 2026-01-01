@@ -98,6 +98,9 @@ public:
 	// === PERFORMANCE ===
 	int springSubsteps{ 4 };      // Number of sub-steps for spring physics (1-8, higher = more stable but slower)
 	
+	// === BEHAVIOR ===
+	bool resetOnPause{ false };   // Reset springs when game is paused (menus, console, etc.)
+	
 	// === DEBUG ===
 	bool debugLogging{ false };
 	bool debugOnScreen{ false };

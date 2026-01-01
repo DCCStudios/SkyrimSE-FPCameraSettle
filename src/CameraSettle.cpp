@@ -640,11 +640,22 @@ namespace CameraSettle
 			return;
 		}
 		
-		// Skip when game is paused
+		// Handle game pause state
 		auto* ui = RE::UI::GetSingleton();
-		if (ui && (ui->GameIsPaused() || ui->numPausesGame > 0)) {
+		bool isGamePaused = ui && (ui->GameIsPaused() || ui->numPausesGame > 0);
+		
+		if (isGamePaused) {
+			// Reset springs when transitioning to paused state (if enabled)
+			if (!wasGamePaused && settings->resetOnPause) {
+				Reset();
+				if (settings->debugLogging) {
+					logger::info("[FPCameraSettle] Game paused - springs reset");
+				}
+			}
+			wasGamePaused = true;
 			return;
 		}
+		wasGamePaused = false;
 		
 		auto* player = RE::PlayerCharacter::GetSingleton();
 		if (!player) {
