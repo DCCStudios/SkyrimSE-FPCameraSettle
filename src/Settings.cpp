@@ -381,7 +381,7 @@ void Settings::Save()
 	ini.SetBoolValue("General", "bEnabled", enabled, "; Master toggle for all camera settle effects");
 	ini.SetDoubleValue("General", "fGlobalIntensity", globalIntensity, "; Global intensity multiplier (1.0 = normal)");
 	ini.SetDoubleValue("General", "fSmoothingFactor", smoothingFactor, "; Input smoothing (0 = none, 1 = maximum)");
-	ini.SetBoolValue("General", "bResetOnPause", resetOnPause, "; Reset camera springs when game is paused (menus, console, etc.)");
+	ini.SetBoolValue("General", "bResetOnPause", resetOnPause, "; Disable camera effects when game is paused (menus, console, etc.)");
 	ini.SetLongValue("General", "iSpringSubsteps", springSubsteps, "; Number of physics sub-steps per frame (1-8, higher = more stable but slower)");
 	
 	// Weapon state settings

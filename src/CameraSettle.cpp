@@ -757,6 +757,15 @@ namespace CameraSettle
 			return;
 		}
 		
+		// Skip applying offsets when game is paused (if resetOnPause is enabled)
+		auto* settings = Settings::GetSingleton();
+		if (settings->resetOnPause) {
+			auto* ui = RE::UI::GetSingleton();
+			if (ui && (ui->GameIsPaused() || ui->numPausesGame > 0)) {
+				return;
+			}
+		}
+		
 		// Combine all spring offsets
 		RE::NiPoint3 totalPosOffset = {
 			movementSpring.positionOffset.x + jumpSpring.positionOffset.x + sneakSpring.positionOffset.x + hitSpring.positionOffset.x + archerySpring.positionOffset.x,

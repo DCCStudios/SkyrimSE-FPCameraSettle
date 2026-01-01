@@ -157,9 +157,9 @@ namespace Menu
 			
 			ImGui::Spacing();
 			
-			if (CheckboxWithTooltip("Reset on Pause", &settings->resetOnPause,
-				"Reset camera springs when the game is paused (menus, console, etc.).\n\n"
-				"When enabled, opening any menu will smoothly reset the camera,\n"
+			if (CheckboxWithTooltip("Disable on Pause", &settings->resetOnPause,
+				"Disable camera effects when the game is paused (menus, console, etc.).\n\n"
+				"When enabled, opening any menu will reset and disable camera offsets,\n"
 				"preventing jarring jumps when you close the menu.")) {
 				MarkSettingsChanged();
 			}
