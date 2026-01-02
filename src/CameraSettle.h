@@ -180,6 +180,21 @@ namespace CameraSettle
 		float lastWalkRunBlend{ -1.0f };         // Track when to recalculate
 		bool lastBlendWeaponDrawn{ false };
 		uint32_t lastSettingsVersion{ 0 };       // Track settings changes for cache invalidation
+		
+		// === IDLE NOISE STATE ===
+		float idleNoiseTime{ 0.0f };             // Accumulated time for noise generation
+		RE::NiPoint3 idleNoiseOffset{ 0.0f, 0.0f, 0.0f };    // Current position noise offset
+		RE::NiPoint3 idleNoiseRotation{ 0.0f, 0.0f, 0.0f };  // Current rotation noise offset
+		
+	public:
+		// === SPRINT EFFECTS STATE (public for initialization) ===
+		float currentFovOffset{ 0.0f };          // Current FOV offset (blended)
+		float currentBlurStrength{ 0.0f };       // Current blur strength (blended)
+		float baseFov{ 0.0f };                   // Base FOV captured when entering first person
+		bool fovCaptured{ false };               // Whether we've captured the base FOV
+		RE::TESImageSpaceModifier* sprintImod{ nullptr };  // Runtime IMOD for sprint blur
+		RE::ImageSpaceModifierInstanceForm* sprintImodInstance{ nullptr };
+		bool blurEffectActive{ false };
 	};
 
 	// Install hooks

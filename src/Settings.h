@@ -101,6 +101,36 @@ public:
 	// === BEHAVIOR ===
 	bool resetOnPause{ false };   // Reset springs when game is paused (menus, console, etc.)
 	
+	// === IDLE CAMERA NOISE ===
+	// Weapon Drawn
+	bool  idleNoiseEnabledDrawn{ false };
+	float idleNoisePosAmpXDrawn{ 0.0f };      // Position amplitude X (left/right)
+	float idleNoisePosAmpYDrawn{ 0.0f };      // Position amplitude Y (forward/back)
+	float idleNoisePosAmpZDrawn{ 0.02f };     // Position amplitude Z (up/down breathing)
+	float idleNoiseRotAmpXDrawn{ 0.1f };      // Rotation amplitude pitch (degrees)
+	float idleNoiseRotAmpYDrawn{ 0.0f };      // Rotation amplitude roll (degrees)
+	float idleNoiseRotAmpZDrawn{ 0.05f };     // Rotation amplitude yaw (degrees)
+	float idleNoiseFrequencyDrawn{ 0.3f };    // Noise frequency (cycles per second)
+	
+	// Weapon Sheathed
+	bool  idleNoiseEnabledSheathed{ true };
+	float idleNoisePosAmpXSheathed{ 0.0f };
+	float idleNoisePosAmpYSheathed{ 0.0f };
+	float idleNoisePosAmpZSheathed{ 0.03f };
+	float idleNoiseRotAmpXSheathed{ 0.15f };
+	float idleNoiseRotAmpYSheathed{ 0.0f };
+	float idleNoiseRotAmpZSheathed{ 0.08f };
+	float idleNoiseFrequencySheathed{ 0.25f };
+	
+	// === SPRINT EFFECTS ===
+	bool  sprintFovEnabled{ true };
+	float sprintFovDelta{ 10.0f };            // FOV increase when sprinting (degrees)
+	float sprintFovBlendSpeed{ 3.0f };        // How fast to blend FOV (higher = faster)
+	
+	bool  sprintBlurEnabled{ false };
+	float sprintBlurStrength{ 0.3f };         // Radial blur strength (0-1)
+	float sprintBlurBlendSpeed{ 3.0f };       // How fast to blend blur (higher = faster)
+	
 	// === DEBUG ===
 	bool debugLogging{ false };
 	bool debugOnScreen{ false };

@@ -735,6 +735,102 @@ namespace CameraSettle
 		UpdateSpring(hitSpring, settings->GetActionSettingsForState(ActionType::TakingHit, weaponDrawn), a_delta, settings);
 		UpdateSpring(archerySpring, settings->GetActionSettingsForState(ActionType::ArrowRelease, weaponDrawn), a_delta, settings);
 		
+		// === UPDATE IDLE CAMERA NOISE ===
+		{
+			// Check if we're truly idle (not moving, sprinting, sneaking, in air)
+			// Use wasMoving from our movement detection which tracks actual movement input
+			auto* playerState = player->AsActorState();
+			bool isIdle = !wasMoving && !playerState->IsSprinting() && 
+			              !playerState->IsSneaking() && !playerState->IsSwimming() && !wasInAir;
+			
+			// Get appropriate idle noise settings based on weapon state
+			bool noiseEnabled = weaponDrawn ? settings->idleNoiseEnabledDrawn : settings->idleNoiseEnabledSheathed;
+			
+			if (isIdle && noiseEnabled) {
+				float freq = weaponDrawn ? settings->idleNoiseFrequencyDrawn : settings->idleNoiseFrequencySheathed;
+				
+				// Advance noise time
+				idleNoiseTime += a_delta * freq * 2.0f * PI;
+				
+				// Use multiple sine waves with different phases for natural-looking noise
+				float sin1 = std::sin(idleNoiseTime);
+				float sin2 = std::sin(idleNoiseTime * 1.37f + 1.2f);  // Slightly different frequency
+				float sin3 = std::sin(idleNoiseTime * 0.73f + 2.5f);  // Even slower frequency
+				
+				// Calculate position noise
+				float posX = weaponDrawn ? settings->idleNoisePosAmpXDrawn : settings->idleNoisePosAmpXSheathed;
+				float posY = weaponDrawn ? settings->idleNoisePosAmpYDrawn : settings->idleNoisePosAmpYSheathed;
+				float posZ = weaponDrawn ? settings->idleNoisePosAmpZDrawn : settings->idleNoisePosAmpZSheathed;
+				
+				idleNoiseOffset.x = sin1 * posX;
+				idleNoiseOffset.y = sin2 * posY;
+				idleNoiseOffset.z = sin3 * posZ;  // Breathing effect
+				
+				// Calculate rotation noise (convert degrees to radians)
+				float rotX = weaponDrawn ? settings->idleNoiseRotAmpXDrawn : settings->idleNoiseRotAmpXSheathed;
+				float rotY = weaponDrawn ? settings->idleNoiseRotAmpYDrawn : settings->idleNoiseRotAmpYSheathed;
+				float rotZ = weaponDrawn ? settings->idleNoiseRotAmpZDrawn : settings->idleNoiseRotAmpZSheathed;
+				
+				idleNoiseRotation.x = sin3 * rotX * DEG_TO_RAD;  // Slow breathing pitch
+				idleNoiseRotation.y = sin1 * rotY * DEG_TO_RAD;  // Roll
+				idleNoiseRotation.z = sin2 * rotZ * DEG_TO_RAD;  // Slight yaw
+			} else {
+				// Fade out noise smoothly when not idle
+				float fadeSpeed = 5.0f * a_delta;
+				idleNoiseOffset = LerpVector(idleNoiseOffset, { 0.0f, 0.0f, 0.0f }, fadeSpeed);
+				idleNoiseRotation = LerpVector(idleNoiseRotation, { 0.0f, 0.0f, 0.0f }, fadeSpeed);
+			}
+		}
+		
+		// === UPDATE SPRINT EFFECTS (FOV + BLUR) ===
+		{
+			bool isSprinting = wasSprinting;  // Use our tracked sprint state
+			
+			// Calculate target FOV offset
+			float targetFovOffset = 0.0f;
+			if (settings->sprintFovEnabled && isSprinting) {
+				targetFovOffset = settings->sprintFovDelta;
+			}
+			
+			// Smoothly blend FOV offset
+			float fovBlendFactor = 1.0f - std::pow(1.0f - std::min(settings->sprintFovBlendSpeed * a_delta, 0.99f), 1.0f);
+			currentFovOffset = currentFovOffset + (targetFovOffset - currentFovOffset) * fovBlendFactor;
+			
+			// Calculate target blur strength
+			float targetBlurStrength = 0.0f;
+			if (settings->sprintBlurEnabled && isSprinting) {
+				targetBlurStrength = settings->sprintBlurStrength;
+			}
+			
+			// Smoothly blend blur strength
+			float blurBlendFactor = 1.0f - std::pow(1.0f - std::min(settings->sprintBlurBlendSpeed * a_delta, 0.99f), 1.0f);
+			currentBlurStrength = currentBlurStrength + (targetBlurStrength - currentBlurStrength) * blurBlendFactor;
+			
+			// Update blur IMOD (if available)
+			// Note: Radial blur requires a properly set up IMOD which is complex
+			// For now, we just control activation/deactivation with a fixed source IMOD
+			if (sprintImod && sprintImod->radialBlur.strength) {
+				// Activate/deactivate blur effect based on strength threshold
+				if (currentBlurStrength > 0.01f) {
+					if (!blurEffectActive) {
+						// Trigger with intensity based on our blend
+						sprintImodInstance = RE::ImageSpaceModifierInstanceForm::Trigger(sprintImod, currentBlurStrength, nullptr);
+						blurEffectActive = true;
+						if (settings->debugLogging) {
+							logger::info("[FPCameraSettle] Sprint blur activated (strength: {:.2f})", currentBlurStrength);
+						}
+					}
+				} else if (blurEffectActive) {
+					RE::ImageSpaceModifierInstanceForm::Stop(sprintImod);
+					sprintImodInstance = nullptr;
+					blurEffectActive = false;
+					if (settings->debugLogging) {
+						logger::info("[FPCameraSettle] Sprint blur deactivated");
+					}
+				}
+			}
+		}
+		
 		// Debug logging
 		if (settings->debugLogging && debugFrameCounter % 60 == 0) {
 			bool anyActive = movementSpring.IsActive() || jumpSpring.IsActive() || 
@@ -766,17 +862,17 @@ namespace CameraSettle
 			}
 		}
 		
-		// Combine all spring offsets
+		// Combine all spring offsets + idle noise
 		RE::NiPoint3 totalPosOffset = {
-			movementSpring.positionOffset.x + jumpSpring.positionOffset.x + sneakSpring.positionOffset.x + hitSpring.positionOffset.x + archerySpring.positionOffset.x,
-			movementSpring.positionOffset.y + jumpSpring.positionOffset.y + sneakSpring.positionOffset.y + hitSpring.positionOffset.y + archerySpring.positionOffset.y,
-			movementSpring.positionOffset.z + jumpSpring.positionOffset.z + sneakSpring.positionOffset.z + hitSpring.positionOffset.z + archerySpring.positionOffset.z
+			movementSpring.positionOffset.x + jumpSpring.positionOffset.x + sneakSpring.positionOffset.x + hitSpring.positionOffset.x + archerySpring.positionOffset.x + idleNoiseOffset.x,
+			movementSpring.positionOffset.y + jumpSpring.positionOffset.y + sneakSpring.positionOffset.y + hitSpring.positionOffset.y + archerySpring.positionOffset.y + idleNoiseOffset.y,
+			movementSpring.positionOffset.z + jumpSpring.positionOffset.z + sneakSpring.positionOffset.z + hitSpring.positionOffset.z + archerySpring.positionOffset.z + idleNoiseOffset.z
 		};
 		
 		RE::NiPoint3 totalRotOffset = {
-			movementSpring.rotationOffset.x + jumpSpring.rotationOffset.x + sneakSpring.rotationOffset.x + hitSpring.rotationOffset.x + archerySpring.rotationOffset.x,
-			movementSpring.rotationOffset.y + jumpSpring.rotationOffset.y + sneakSpring.rotationOffset.y + hitSpring.rotationOffset.y + archerySpring.rotationOffset.y,
-			movementSpring.rotationOffset.z + jumpSpring.rotationOffset.z + sneakSpring.rotationOffset.z + hitSpring.rotationOffset.z + archerySpring.rotationOffset.z
+			movementSpring.rotationOffset.x + jumpSpring.rotationOffset.x + sneakSpring.rotationOffset.x + hitSpring.rotationOffset.x + archerySpring.rotationOffset.x + idleNoiseRotation.x,
+			movementSpring.rotationOffset.y + jumpSpring.rotationOffset.y + sneakSpring.rotationOffset.y + hitSpring.rotationOffset.y + archerySpring.rotationOffset.y + idleNoiseRotation.y,
+			movementSpring.rotationOffset.z + jumpSpring.rotationOffset.z + sneakSpring.rotationOffset.z + hitSpring.rotationOffset.z + archerySpring.rotationOffset.z + idleNoiseRotation.z
 		};
 		
 		// OPTIMIZATION: Use squared magnitudes to avoid sqrt
@@ -843,6 +939,21 @@ namespace CameraSettle
 			cameraNI->world.rotate = cameraNode->world.rotate;
 		}
 		
+		// Apply FOV offset (for sprint effect)
+		if (std::abs(currentFovOffset) > 0.01f) {
+			// Capture base FOV if not done yet
+			if (!fovCaptured) {
+				baseFov = a_camera->worldFOV;
+				fovCaptured = true;
+			}
+			
+			// Apply FOV change
+			a_camera->worldFOV = baseFov + currentFovOffset;
+		} else if (fovCaptured && std::abs(currentFovOffset) <= 0.01f) {
+			// Reset to base FOV when effect is off
+			a_camera->worldFOV = baseFov;
+		}
+		
 		// Update node with dirty flag (like ImprovedCameraSE's Helper::UpdateNode)
 		RE::NiUpdateData updateData;
 		updateData.flags = RE::NiUpdateData::Flag::kDirty;
@@ -888,6 +999,17 @@ namespace CameraSettle
 		lastWalkRunBlend = -1.0f;  // Force recalculation
 		lastBlendWeaponDrawn = false;
 		hotReloadTimer = 0.0f;
+		
+		// Reset idle noise state
+		idleNoiseTime = 0.0f;
+		idleNoiseOffset = { 0.0f, 0.0f, 0.0f };
+		idleNoiseRotation = { 0.0f, 0.0f, 0.0f };
+		
+		// Reset sprint effects state
+		currentFovOffset = 0.0f;
+		currentBlurStrength = 0.0f;
+		fovCaptured = false;
+		// Note: Don't destroy sprintImod here - it persists
 		
 		// Don't reset animEventRegistered - it persists across resets
 		
@@ -977,6 +1099,60 @@ namespace CameraSettle
 			static inline REL::Relocation<decltype(OnCameraUpdate)> _originalCameraUpdate;
 		};
 	}
+	
+	// Initialize the IMOD for sprint blur effect
+	// Note: This searches for an existing radial blur IMOD to use as a template
+	void InitializeSprintBlurIMOD()
+	{
+		auto* manager = CameraSettleManager::GetSingleton();
+		
+		// Look for an existing IMOD with radial blur that we can use as a template
+		auto* dataHandler = RE::TESDataHandler::GetSingleton();
+		if (!dataHandler) {
+			logger::error("[FPCameraSettle] Failed to get data handler for IMOD initialization");
+			return;
+		}
+		
+		// Search for a suitable source IMOD with radial blur
+		RE::TESImageSpaceModifier* sourceImod = nullptr;
+		for (auto* imod : dataHandler->GetFormArray<RE::TESImageSpaceModifier>()) {
+			if (imod && imod->radialBlur.strength) {
+				sourceImod = imod;
+				logger::info("[FPCameraSettle] Found source IMOD for blur: {}", 
+					imod->GetFormEditorID() ? imod->GetFormEditorID() : "unknown");
+				break;
+			}
+		}
+		
+		if (!sourceImod) {
+			logger::warn("[FPCameraSettle] No source IMOD with radial blur found - blur effect disabled");
+			return;
+		}
+		
+		// Create runtime IMOD using factory
+		const auto factory = RE::IFormFactory::GetConcreteFormFactoryByType<RE::TESImageSpaceModifier>();
+		if (!factory) {
+			logger::error("[FPCameraSettle] Failed to get IMOD factory");
+			return;
+		}
+		
+		manager->sprintImod = factory->Create();
+		if (!manager->sprintImod) {
+			logger::error("[FPCameraSettle] Failed to create sprint blur IMOD");
+			return;
+		}
+		
+		// Copy data from source IMOD
+		manager->sprintImod->formFlags = sourceImod->formFlags;
+		manager->sprintImod->radialBlur = sourceImod->radialBlur;
+		
+		manager->sprintImod->SetFormEditorID("FPCameraSettleSprintBlur");
+		
+		// Add to data handler
+		dataHandler->GetFormArray<RE::TESImageSpaceModifier>().push_back(manager->sprintImod);
+		
+		logger::info("[FPCameraSettle] Sprint blur IMOD created successfully");
+	}
 
 	void Install()
 	{
@@ -986,6 +1162,9 @@ namespace CameraSettle
 		// Install hooks
 		Hook::MainUpdateHook::Install();
 		Hook::CameraUpdateHook::Install();
+		
+		// Initialize sprint blur IMOD
+		InitializeSprintBlurIMOD();
 		
 		// Register for hit events (explicit cast needed since we inherit from multiple event sinks)
 		auto* eventSource = RE::ScriptEventSourceHolder::GetSingleton();

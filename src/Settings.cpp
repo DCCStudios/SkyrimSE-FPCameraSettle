@@ -317,6 +317,34 @@ void Settings::Load()
 	settleSpeed = static_cast<float>(ini.GetDoubleValue("Settling", "fSettleSpeed", settleSpeed));
 	settleDampingMult = static_cast<float>(ini.GetDoubleValue("Settling", "fSettleDampingMult", settleDampingMult));
 	
+	// Load idle noise settings (weapon drawn)
+	idleNoiseEnabledDrawn = ini.GetBoolValue("IdleNoise_Drawn", "bEnabled", idleNoiseEnabledDrawn);
+	idleNoisePosAmpXDrawn = static_cast<float>(ini.GetDoubleValue("IdleNoise_Drawn", "fPosAmpX", idleNoisePosAmpXDrawn));
+	idleNoisePosAmpYDrawn = static_cast<float>(ini.GetDoubleValue("IdleNoise_Drawn", "fPosAmpY", idleNoisePosAmpYDrawn));
+	idleNoisePosAmpZDrawn = static_cast<float>(ini.GetDoubleValue("IdleNoise_Drawn", "fPosAmpZ", idleNoisePosAmpZDrawn));
+	idleNoiseRotAmpXDrawn = static_cast<float>(ini.GetDoubleValue("IdleNoise_Drawn", "fRotAmpX", idleNoiseRotAmpXDrawn));
+	idleNoiseRotAmpYDrawn = static_cast<float>(ini.GetDoubleValue("IdleNoise_Drawn", "fRotAmpY", idleNoiseRotAmpYDrawn));
+	idleNoiseRotAmpZDrawn = static_cast<float>(ini.GetDoubleValue("IdleNoise_Drawn", "fRotAmpZ", idleNoiseRotAmpZDrawn));
+	idleNoiseFrequencyDrawn = static_cast<float>(ini.GetDoubleValue("IdleNoise_Drawn", "fFrequency", idleNoiseFrequencyDrawn));
+	
+	// Load idle noise settings (weapon sheathed)
+	idleNoiseEnabledSheathed = ini.GetBoolValue("IdleNoise_Sheathed", "bEnabled", idleNoiseEnabledSheathed);
+	idleNoisePosAmpXSheathed = static_cast<float>(ini.GetDoubleValue("IdleNoise_Sheathed", "fPosAmpX", idleNoisePosAmpXSheathed));
+	idleNoisePosAmpYSheathed = static_cast<float>(ini.GetDoubleValue("IdleNoise_Sheathed", "fPosAmpY", idleNoisePosAmpYSheathed));
+	idleNoisePosAmpZSheathed = static_cast<float>(ini.GetDoubleValue("IdleNoise_Sheathed", "fPosAmpZ", idleNoisePosAmpZSheathed));
+	idleNoiseRotAmpXSheathed = static_cast<float>(ini.GetDoubleValue("IdleNoise_Sheathed", "fRotAmpX", idleNoiseRotAmpXSheathed));
+	idleNoiseRotAmpYSheathed = static_cast<float>(ini.GetDoubleValue("IdleNoise_Sheathed", "fRotAmpY", idleNoiseRotAmpYSheathed));
+	idleNoiseRotAmpZSheathed = static_cast<float>(ini.GetDoubleValue("IdleNoise_Sheathed", "fRotAmpZ", idleNoiseRotAmpZSheathed));
+	idleNoiseFrequencySheathed = static_cast<float>(ini.GetDoubleValue("IdleNoise_Sheathed", "fFrequency", idleNoiseFrequencySheathed));
+	
+	// Load sprint effects settings
+	sprintFovEnabled = ini.GetBoolValue("SprintEffects", "bFovEnabled", sprintFovEnabled);
+	sprintFovDelta = static_cast<float>(ini.GetDoubleValue("SprintEffects", "fFovDelta", sprintFovDelta));
+	sprintFovBlendSpeed = static_cast<float>(ini.GetDoubleValue("SprintEffects", "fFovBlendSpeed", sprintFovBlendSpeed));
+	sprintBlurEnabled = ini.GetBoolValue("SprintEffects", "bBlurEnabled", sprintBlurEnabled);
+	sprintBlurStrength = static_cast<float>(ini.GetDoubleValue("SprintEffects", "fBlurStrength", sprintBlurStrength));
+	sprintBlurBlendSpeed = static_cast<float>(ini.GetDoubleValue("SprintEffects", "fBlurBlendSpeed", sprintBlurBlendSpeed));
+	
 	// Load debug settings
 	debugLogging = ini.GetBoolValue("Debug", "bDebugLogging", debugLogging);
 	debugOnScreen = ini.GetBoolValue("Debug", "bDebugOnScreen", debugOnScreen);
@@ -394,6 +422,34 @@ void Settings::Save()
 	ini.SetDoubleValue("Settling", "fSettleDelay", settleDelay, "; Delay before settling starts (seconds)");
 	ini.SetDoubleValue("Settling", "fSettleSpeed", settleSpeed, "; How fast settling occurs");
 	ini.SetDoubleValue("Settling", "fSettleDampingMult", settleDampingMult, "; Max damping multiplier when settled");
+	
+	// Idle noise settings (weapon drawn)
+	ini.SetBoolValue("IdleNoise_Drawn", "bEnabled", idleNoiseEnabledDrawn, "; Enable subtle camera motion when standing idle (weapon drawn)");
+	ini.SetDoubleValue("IdleNoise_Drawn", "fPosAmpX", idleNoisePosAmpXDrawn, "; Position amplitude X (left/right)");
+	ini.SetDoubleValue("IdleNoise_Drawn", "fPosAmpY", idleNoisePosAmpYDrawn, "; Position amplitude Y (forward/back)");
+	ini.SetDoubleValue("IdleNoise_Drawn", "fPosAmpZ", idleNoisePosAmpZDrawn, "; Position amplitude Z (up/down breathing)");
+	ini.SetDoubleValue("IdleNoise_Drawn", "fRotAmpX", idleNoiseRotAmpXDrawn, "; Rotation amplitude pitch (degrees)");
+	ini.SetDoubleValue("IdleNoise_Drawn", "fRotAmpY", idleNoiseRotAmpYDrawn, "; Rotation amplitude roll (degrees)");
+	ini.SetDoubleValue("IdleNoise_Drawn", "fRotAmpZ", idleNoiseRotAmpZDrawn, "; Rotation amplitude yaw (degrees)");
+	ini.SetDoubleValue("IdleNoise_Drawn", "fFrequency", idleNoiseFrequencyDrawn, "; Noise frequency (cycles per second)");
+	
+	// Idle noise settings (weapon sheathed)
+	ini.SetBoolValue("IdleNoise_Sheathed", "bEnabled", idleNoiseEnabledSheathed, "; Enable subtle camera motion when standing idle (weapon sheathed)");
+	ini.SetDoubleValue("IdleNoise_Sheathed", "fPosAmpX", idleNoisePosAmpXSheathed, "; Position amplitude X (left/right)");
+	ini.SetDoubleValue("IdleNoise_Sheathed", "fPosAmpY", idleNoisePosAmpYSheathed, "; Position amplitude Y (forward/back)");
+	ini.SetDoubleValue("IdleNoise_Sheathed", "fPosAmpZ", idleNoisePosAmpZSheathed, "; Position amplitude Z (up/down breathing)");
+	ini.SetDoubleValue("IdleNoise_Sheathed", "fRotAmpX", idleNoiseRotAmpXSheathed, "; Rotation amplitude pitch (degrees)");
+	ini.SetDoubleValue("IdleNoise_Sheathed", "fRotAmpY", idleNoiseRotAmpYSheathed, "; Rotation amplitude roll (degrees)");
+	ini.SetDoubleValue("IdleNoise_Sheathed", "fRotAmpZ", idleNoiseRotAmpZSheathed, "; Rotation amplitude yaw (degrees)");
+	ini.SetDoubleValue("IdleNoise_Sheathed", "fFrequency", idleNoiseFrequencySheathed, "; Noise frequency (cycles per second)");
+	
+	// Sprint effects
+	ini.SetBoolValue("SprintEffects", "bFovEnabled", sprintFovEnabled, "; Enable FOV increase when sprinting");
+	ini.SetDoubleValue("SprintEffects", "fFovDelta", sprintFovDelta, "; FOV increase when sprinting (degrees)");
+	ini.SetDoubleValue("SprintEffects", "fFovBlendSpeed", sprintFovBlendSpeed, "; How fast to blend FOV (higher = faster)");
+	ini.SetBoolValue("SprintEffects", "bBlurEnabled", sprintBlurEnabled, "; Enable radial blur when sprinting");
+	ini.SetDoubleValue("SprintEffects", "fBlurStrength", sprintBlurStrength, "; Radial blur strength (0-1)");
+	ini.SetDoubleValue("SprintEffects", "fBlurBlendSpeed", sprintBlurBlendSpeed, "; How fast to blend blur (higher = faster)");
 	
 	// Debug settings
 	ini.SetBoolValue("Debug", "bDebugLogging", debugLogging, "; Enable detailed debug logging");

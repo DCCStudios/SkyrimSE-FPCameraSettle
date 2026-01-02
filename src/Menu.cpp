@@ -61,6 +61,8 @@ namespace Menu
 		DrawGeneralSettings();
 		DrawWeaponStateSettings();
 		DrawSettlingSettings();
+		DrawIdleNoiseSettings();
+		DrawSprintEffectsSettings();
 		DrawDebugSettings();
 		
 		ImGui::Separator();
@@ -249,6 +251,196 @@ namespace Menu
 			}
 		} else {
 			State::settlingExpanded = false;
+		}
+	}
+	
+	void DrawIdleNoiseSettings()
+	{
+		auto* settings = Settings::GetSingleton();
+		
+		if (ImGui::CollapsingHeader("Idle Camera Noise", State::idleNoiseExpanded ? ImGuiTreeNodeFlags_DefaultOpen : 0)) {
+			State::idleNoiseExpanded = true;
+			
+			ImGui::TextWrapped("Subtle breathing/sway motion when standing idle. Separate settings for weapon drawn vs sheathed.");
+			ImGui::Spacing();
+			
+			ImGui::BeginDisabled(!State::editMode);
+			
+			// === WEAPON DRAWN ===
+			ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.4f, 0.2f, 0.2f, 0.6f));
+			if (ImGui::TreeNode("Weapon Drawn##IdleNoise")) {
+				ImGui::PopStyleColor();
+				
+				if (CheckboxWithTooltip("Enabled##IdleDrawn", &settings->idleNoiseEnabledDrawn,
+					"Enable idle camera noise when weapon is drawn")) {
+					MarkSettingsChanged();
+				}
+				
+				if (settings->idleNoiseEnabledDrawn) {
+					ImGui::Separator();
+					ImGui::Text("Position Amplitude:");
+					
+					if (SliderFloatWithTooltip("X (Left/Right)##IdleDrawn", &settings->idleNoisePosAmpXDrawn, 0.0f, 0.5f, "%.3f",
+						"Side-to-side position noise amplitude")) {
+						MarkSettingsChanged();
+					}
+					if (SliderFloatWithTooltip("Y (Forward/Back)##IdleDrawn", &settings->idleNoisePosAmpYDrawn, 0.0f, 0.5f, "%.3f",
+						"Forward/backward position noise amplitude")) {
+						MarkSettingsChanged();
+					}
+					if (SliderFloatWithTooltip("Z (Up/Down)##IdleDrawn", &settings->idleNoisePosAmpZDrawn, 0.0f, 0.5f, "%.3f",
+						"Up/down position noise amplitude (breathing)")) {
+						MarkSettingsChanged();
+					}
+					
+					ImGui::Separator();
+					ImGui::Text("Rotation Amplitude (degrees):");
+					
+					if (SliderFloatWithTooltip("Pitch##IdleDrawn", &settings->idleNoiseRotAmpXDrawn, 0.0f, 2.0f, "%.2f",
+						"Head pitch noise amplitude")) {
+						MarkSettingsChanged();
+					}
+					if (SliderFloatWithTooltip("Roll##IdleDrawn", &settings->idleNoiseRotAmpYDrawn, 0.0f, 2.0f, "%.2f",
+						"Head roll noise amplitude")) {
+						MarkSettingsChanged();
+					}
+					if (SliderFloatWithTooltip("Yaw##IdleDrawn", &settings->idleNoiseRotAmpZDrawn, 0.0f, 2.0f, "%.2f",
+						"Head yaw noise amplitude")) {
+						MarkSettingsChanged();
+					}
+					
+					ImGui::Separator();
+					if (SliderFloatWithTooltip("Frequency##IdleDrawn", &settings->idleNoiseFrequencyDrawn, 0.1f, 1.0f, "%.2f",
+						"Noise frequency (cycles per second). Lower = slower, more relaxed")) {
+						MarkSettingsChanged();
+					}
+				}
+				
+				ImGui::TreePop();
+			} else {
+				ImGui::PopStyleColor();
+			}
+			
+			ImGui::Spacing();
+			
+			// === WEAPON SHEATHED ===
+			ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.2f, 0.3f, 0.4f, 0.6f));
+			if (ImGui::TreeNode("Weapon Sheathed##IdleNoise")) {
+				ImGui::PopStyleColor();
+				
+				if (CheckboxWithTooltip("Enabled##IdleSheathed", &settings->idleNoiseEnabledSheathed,
+					"Enable idle camera noise when weapon is sheathed")) {
+					MarkSettingsChanged();
+				}
+				
+				if (settings->idleNoiseEnabledSheathed) {
+					ImGui::Separator();
+					ImGui::Text("Position Amplitude:");
+					
+					if (SliderFloatWithTooltip("X (Left/Right)##IdleSheathed", &settings->idleNoisePosAmpXSheathed, 0.0f, 0.5f, "%.3f",
+						"Side-to-side position noise amplitude")) {
+						MarkSettingsChanged();
+					}
+					if (SliderFloatWithTooltip("Y (Forward/Back)##IdleSheathed", &settings->idleNoisePosAmpYSheathed, 0.0f, 0.5f, "%.3f",
+						"Forward/backward position noise amplitude")) {
+						MarkSettingsChanged();
+					}
+					if (SliderFloatWithTooltip("Z (Up/Down)##IdleSheathed", &settings->idleNoisePosAmpZSheathed, 0.0f, 0.5f, "%.3f",
+						"Up/down position noise amplitude (breathing)")) {
+						MarkSettingsChanged();
+					}
+					
+					ImGui::Separator();
+					ImGui::Text("Rotation Amplitude (degrees):");
+					
+					if (SliderFloatWithTooltip("Pitch##IdleSheathed", &settings->idleNoiseRotAmpXSheathed, 0.0f, 2.0f, "%.2f",
+						"Head pitch noise amplitude")) {
+						MarkSettingsChanged();
+					}
+					if (SliderFloatWithTooltip("Roll##IdleSheathed", &settings->idleNoiseRotAmpYSheathed, 0.0f, 2.0f, "%.2f",
+						"Head roll noise amplitude")) {
+						MarkSettingsChanged();
+					}
+					if (SliderFloatWithTooltip("Yaw##IdleSheathed", &settings->idleNoiseRotAmpZSheathed, 0.0f, 2.0f, "%.2f",
+						"Head yaw noise amplitude")) {
+						MarkSettingsChanged();
+					}
+					
+					ImGui::Separator();
+					if (SliderFloatWithTooltip("Frequency##IdleSheathed", &settings->idleNoiseFrequencySheathed, 0.1f, 1.0f, "%.2f",
+						"Noise frequency (cycles per second). Lower = slower, more relaxed")) {
+						MarkSettingsChanged();
+					}
+				}
+				
+				ImGui::TreePop();
+			} else {
+				ImGui::PopStyleColor();
+			}
+			
+			ImGui::EndDisabled();
+		} else {
+			State::idleNoiseExpanded = false;
+		}
+	}
+	
+	void DrawSprintEffectsSettings()
+	{
+		auto* settings = Settings::GetSingleton();
+		
+		if (ImGui::CollapsingHeader("Sprint Effects", State::sprintEffectsExpanded ? ImGuiTreeNodeFlags_DefaultOpen : 0)) {
+			State::sprintEffectsExpanded = true;
+			
+			ImGui::TextWrapped("Visual effects applied when sprinting: FOV increase and radial blur.");
+			ImGui::Spacing();
+			
+			ImGui::BeginDisabled(!State::editMode);
+			
+			// === FOV SETTINGS ===
+			ImGui::Separator();
+			ImGui::Text("Field of View:");
+			
+			if (CheckboxWithTooltip("Enable FOV Effect", &settings->sprintFovEnabled,
+				"Increase FOV when sprinting for a sense of speed")) {
+				MarkSettingsChanged();
+			}
+			
+			if (settings->sprintFovEnabled) {
+				if (SliderFloatWithTooltip("FOV Delta", &settings->sprintFovDelta, 0.0f, 30.0f, "+%.1f degrees",
+					"Amount to increase FOV when sprinting\n(added to current first-person FOV)")) {
+					MarkSettingsChanged();
+				}
+				if (SliderFloatWithTooltip("Blend Speed##FOV", &settings->sprintFovBlendSpeed, 0.5f, 10.0f, "%.1f",
+					"How fast to blend in/out the FOV change\n(higher = faster transition)")) {
+					MarkSettingsChanged();
+				}
+			}
+			
+			ImGui::Spacing();
+			
+			// === BLUR SETTINGS ===
+			ImGui::Separator();
+			ImGui::Text("Radial Blur:");
+			
+			if (CheckboxWithTooltip("Enable Radial Blur", &settings->sprintBlurEnabled,
+				"Apply radial blur effect when sprinting")) {
+				MarkSettingsChanged();
+			}
+			
+			if (settings->sprintBlurEnabled) {
+				if (SliderFloatWithTooltip("Blur Strength", &settings->sprintBlurStrength, 0.0f, 1.0f, "%.2f",
+					"Intensity of the radial blur effect\n(0 = none, 1 = maximum)")) {
+					MarkSettingsChanged();
+				}
+				if (SliderFloatWithTooltip("Blend Speed##Blur", &settings->sprintBlurBlendSpeed, 0.5f, 10.0f, "%.1f",
+					"How fast to blend in/out the blur effect\n(higher = faster transition)")) {
+					MarkSettingsChanged();
+				}
+			}
+			
+			ImGui::EndDisabled();
+		} else {
+			State::sprintEffectsExpanded = false;
 		}
 	}
 	
