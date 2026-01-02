@@ -737,11 +737,25 @@ namespace CameraSettle
 		
 		// === UPDATE IDLE CAMERA NOISE ===
 		{
-			// Check if we're truly idle (not moving, sprinting, sneaking, in air)
-			// Use wasMoving from our movement detection which tracks actual movement input
+			// Check if we're truly idle:
+			// - Not moving (walking/running/sprinting)
+			// - Not in air (jumping/falling)
+			// - Not sneaking
+			// - Not swimming
+			// - No active springs from other actions (movement, jump, sneak, hit, archery)
 			auto* playerState = player->AsActorState();
-			bool isIdle = !wasMoving && !playerState->IsSprinting() && 
-			              !playerState->IsSneaking() && !playerState->IsSwimming() && !wasInAir;
+			
+			bool hasActiveActions = movementSpring.IsActive() || jumpSpring.IsActive() || 
+			                        sneakSpring.IsActive() || hitSpring.IsActive() || archerySpring.IsActive();
+			bool hasPendingBlends = movementBlend.active || jumpBlend.active || 
+			                        sneakBlend.active || hitBlend.active || archeryBlend.active;
+			
+			bool isGrounded = !wasInAir && !player->IsInMidair();
+			bool isStandingStill = !wasMoving && !playerState->IsSprinting();
+			bool isNotInAction = !playerState->IsSneaking() && !playerState->IsSwimming() && 
+			                     !hasActiveActions && !hasPendingBlends;
+			
+			bool isIdle = isGrounded && isStandingStill && isNotInAction;
 			
 			// Get appropriate idle noise settings based on weapon state
 			bool noiseEnabled = weaponDrawn ? settings->idleNoiseEnabledDrawn : settings->idleNoiseEnabledSheathed;
