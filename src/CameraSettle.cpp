@@ -522,6 +522,28 @@ namespace CameraSettle
 			return RE::BSEventNotifyControl::kContinue;
 		}
 		
+		// Filter out magic/spell damage - only allow weapon and projectile hits
+		// This prevents continuous triggering from damage over time effects
+		// a_event->source is a FormID, need to look it up
+		if (a_event->source != 0) {
+			RE::TESForm* sourceForm = RE::TESForm::LookupByID(a_event->source);
+			if (sourceForm) {
+				auto formType = sourceForm->GetFormType();
+				// Only allow weapons (kWeapon), projectiles (kProjectile), and ammo (kAmmo)
+				// Reject spells (kSpell), enchantments (kEnchantment), magic effects (kMagicEffect), etc.
+				if (formType != RE::FormType::Weapon && 
+				    formType != RE::FormType::Projectile && 
+				    formType != RE::FormType::Ammo) {
+					return RE::BSEventNotifyControl::kContinue;
+				}
+			}
+		}
+		
+		// Also filter out hits with no cause (often environmental/magic DoT)
+		if (!a_event->cause.get()) {
+			return RE::BSEventNotifyControl::kContinue;
+		}
+		
 		bool weaponDrawn = player->AsActorState()->IsWeaponDrawn();
 		float stateMult = weaponDrawn ? settings->weaponDrawnMult : settings->weaponSheathedMult;
 		float globalMult = settings->globalIntensity * stateMult;
@@ -533,9 +555,10 @@ namespace CameraSettle
 		if (playerHit) {
 			const auto& hitSettings = settings->GetActionSettingsForState(ActionType::TakingHit, weaponDrawn);
 			ApplyImpulse(hitSpring, hitBlend, hitSettings, globalMult, settings);
-			hitCooldown = 0.1f;
+			hitCooldown = 0.15f;  // Slightly longer cooldown to prevent rapid re-triggers
 			timeSinceAction = 0.0f;
-			if (settings->debugLogging) logger::info("[FPCameraSettle] Action: Taking Hit");
+			if (settings->debugLogging) logger::info("[FPCameraSettle] Action: Taking Hit (source: {:X})", 
+				a_event->source);
 		} else if (playerHitting) {
 			const auto& hittingSettings = settings->GetActionSettingsForState(ActionType::Hitting, weaponDrawn);
 			ApplyImpulse(hitSpring, hitBlend, hittingSettings, globalMult, settings);
@@ -743,7 +766,7 @@ namespace CameraSettle
 			// - Not sneaking
 			// - Not swimming
 			// - No active springs from other actions (movement, jump, sneak, hit, archery)
-			// - No active sprint effects (FOV/blur still blending out)
+			// Note: Idle noise blends in/out simultaneously with sprint effects for smooth transitions
 			auto* playerState = player->AsActorState();
 			
 			bool hasActiveActions = movementSpring.IsActive() || jumpSpring.IsActive() || 
@@ -751,13 +774,10 @@ namespace CameraSettle
 			bool hasPendingBlends = movementBlend.active || jumpBlend.active || 
 			                        sneakBlend.active || hitBlend.active || archeryBlend.active;
 			
-			// Check if sprint effects are still blending out
-			bool hasActiveSprintEffects = std::abs(currentFovOffset) > 0.1f || std::abs(currentBlurStrength) > 0.01f;
-			
 			bool isGrounded = !wasInAir && !player->IsInMidair();
 			bool isStandingStill = !wasMoving && !playerState->IsSprinting();
 			bool isNotInAction = !playerState->IsSneaking() && !playerState->IsSwimming() && 
-			                     !hasActiveActions && !hasPendingBlends && !hasActiveSprintEffects;
+			                     !hasActiveActions && !hasPendingBlends;
 			
 			bool isIdle = isGrounded && isStandingStill && isNotInAction;
 			
