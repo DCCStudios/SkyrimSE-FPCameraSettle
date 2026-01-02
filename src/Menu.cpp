@@ -410,7 +410,7 @@ namespace Menu
 					"Amount to increase FOV when sprinting\n(added to current first-person FOV)")) {
 					MarkSettingsChanged();
 				}
-				if (SliderFloatWithTooltip("Blend Speed##FOV", &settings->sprintFovBlendSpeed, 0.5f, 10.0f, "%.1f",
+				if (SliderFloatWithTooltip("Blend Speed##FOV", &settings->sprintFovBlendSpeed, 0.5f, 30.0f, "%.1f",
 					"How fast to blend in/out the FOV change\n(higher = faster transition)")) {
 					MarkSettingsChanged();
 				}
@@ -432,7 +432,7 @@ namespace Menu
 					"Intensity of the radial blur effect\n(0 = none, 1 = maximum)")) {
 					MarkSettingsChanged();
 				}
-				if (SliderFloatWithTooltip("Blend Speed##Blur", &settings->sprintBlurBlendSpeed, 0.5f, 10.0f, "%.1f",
+				if (SliderFloatWithTooltip("Blend Speed##Blur", &settings->sprintBlurBlendSpeed, 0.5f, 30.0f, "%.1f",
 					"How fast the blur strength transitions\n(higher = faster blend in/out)")) {
 					MarkSettingsChanged();
 				}
