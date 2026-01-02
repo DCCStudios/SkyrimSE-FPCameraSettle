@@ -20,11 +20,6 @@
 #include <unordered_map>
 #include <vector>
 
-// D3D11 headers for graphics system
-#include <d3d11.h>
-#include <dxgi.h>
-#include <wrl/client.h>
-
 #include <SimpleIni.h>
 
 #define DLLEXPORT __declspec(dllexport)

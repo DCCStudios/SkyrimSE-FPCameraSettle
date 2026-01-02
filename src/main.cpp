@@ -1,7 +1,6 @@
 #include "CameraSettle.h"
 #include "Settings.h"
 #include "Menu.h"
-#include "Graphics.h"
 
 namespace Plugin
 {
@@ -42,10 +41,6 @@ void MessageHandler(SKSE::MessagingInterface::Message* a_msg)
 		CameraSettle::Install();
 		Menu::Register();
 		logger::info("FP Camera Settle initialized successfully");
-		break;
-	case SKSE::MessagingInterface::kPostPostLoad:
-		// Initialize graphics after renderer is ready
-		Graphics::RadialBlurManager::GetSingleton()->Initialize();
 		break;
 	}
 }
