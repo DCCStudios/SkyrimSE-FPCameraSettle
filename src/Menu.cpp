@@ -428,8 +428,8 @@ namespace Menu
 			}
 			
 			if (settings->sprintBlurEnabled) {
-				if (SliderFloatWithTooltip("Blur Strength", &settings->sprintBlurStrength, 0.0f, 1.0f, "%.2f",
-					"Intensity of the radial blur effect\n(0 = none, 1 = maximum)")) {
+				if (SliderFloatWithTooltip("Blur Strength", &settings->sprintBlurStrength, 0.0f, 3.0f, "%.2f",
+					"Intensity of the radial blur effect\n(0 = none, 1 = normal, 3 = intense)")) {
 					MarkSettingsChanged();
 				}
 				if (SliderFloatWithTooltip("Blend Speed##Blur", &settings->sprintBlurBlendSpeed, 0.5f, 30.0f, "%.1f",
