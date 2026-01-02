@@ -760,7 +760,7 @@ namespace CameraSettle
 			// - Not in air (jumping/falling)
 			// - Not sneaking
 			// - Not swimming
-			// - No active springs from other actions (movement, jump, sneak, hit, archery)
+			// - No active springs from other actions
 			auto* playerState = player->AsActorState();
 			
 			bool hasActiveActions = movementSpring.IsActive() || jumpSpring.IsActive() || 
@@ -775,27 +775,29 @@ namespace CameraSettle
 			
 			bool isIdle = isGrounded && isStandingStill && isNotInAction;
 			
-			// Track idle state transitions to reset noise phase
-			static bool wasIdle = false;
-			if (isIdle && !wasIdle) {
-				// Just became idle - reset noise time so sine waves start from 0
-				// This ensures smooth blend-in from zero offset
-				idleNoiseTime = 0.0f;
-			}
-			wasIdle = isIdle;
-			
 			// Get appropriate idle noise settings based on weapon state
 			bool noiseEnabled = weaponDrawn ? settings->idleNoiseEnabledDrawn : settings->idleNoiseEnabledSheathed;
 			
-			// Blend speed for smooth transitions (same rate for fade in and fade out)
-			constexpr float IDLE_BLEND_SPEED = 3.0f;  // Lower = slower/smoother transition
-			float blendFactor = std::min(1.0f, IDLE_BLEND_SPEED * a_delta);
+			// Track idle blend factor (0 = not idle, 1 = fully idle)
+			// This provides a smooth transition envelope for the noise
+			constexpr float IDLE_BLEND_IN_SPEED = 5.0f;   // Fast blend in (0.2 seconds)
+			constexpr float IDLE_BLEND_OUT_SPEED = 8.0f;  // Faster blend out
+			static float idleBlendFactor = 0.0f;
+			
+			if (isIdle && noiseEnabled) {
+				// Blend toward fully idle
+				idleBlendFactor = std::min(1.0f, idleBlendFactor + IDLE_BLEND_IN_SPEED * a_delta);
+			} else {
+				// Blend toward not idle (reset to zero)
+				idleBlendFactor = std::max(0.0f, idleBlendFactor - IDLE_BLEND_OUT_SPEED * a_delta);
+			}
 			
 			// Calculate target noise values
 			RE::NiPoint3 targetPosNoise = { 0.0f, 0.0f, 0.0f };
 			RE::NiPoint3 targetRotNoise = { 0.0f, 0.0f, 0.0f };
 			
-			if (isIdle && noiseEnabled) {
+			if (idleBlendFactor > 0.01f) {
+				// Only calculate and advance noise when blending in or fully idle
 				float freq = weaponDrawn ? settings->idleNoiseFrequencyDrawn : settings->idleNoiseFrequencySheathed;
 				
 				// Advance noise time
@@ -803,32 +805,34 @@ namespace CameraSettle
 				
 				// Use multiple sine waves with different phases for natural-looking noise
 				float sin1 = std::sin(idleNoiseTime);
-				float sin2 = std::sin(idleNoiseTime * 1.37f + 1.2f);  // Slightly different frequency
-				float sin3 = std::sin(idleNoiseTime * 0.73f + 2.5f);  // Even slower frequency
+				float sin2 = std::sin(idleNoiseTime * 1.37f + 1.2f);
+				float sin3 = std::sin(idleNoiseTime * 0.73f + 2.5f);
 				
-				// Calculate target position noise
+				// Calculate position noise
 				float posX = weaponDrawn ? settings->idleNoisePosAmpXDrawn : settings->idleNoisePosAmpXSheathed;
 				float posY = weaponDrawn ? settings->idleNoisePosAmpYDrawn : settings->idleNoisePosAmpYSheathed;
 				float posZ = weaponDrawn ? settings->idleNoisePosAmpZDrawn : settings->idleNoisePosAmpZSheathed;
 				
-				targetPosNoise.x = sin1 * posX;
-				targetPosNoise.y = sin2 * posY;
-				targetPosNoise.z = sin3 * posZ;  // Breathing effect
+				// Apply idle blend factor as envelope - noise scales with how "idle" we are
+				targetPosNoise.x = sin1 * posX * idleBlendFactor;
+				targetPosNoise.y = sin2 * posY * idleBlendFactor;
+				targetPosNoise.z = sin3 * posZ * idleBlendFactor;
 				
-				// Calculate target rotation noise (convert degrees to radians)
+				// Calculate rotation noise (convert degrees to radians)
 				float rotX = weaponDrawn ? settings->idleNoiseRotAmpXDrawn : settings->idleNoiseRotAmpXSheathed;
 				float rotY = weaponDrawn ? settings->idleNoiseRotAmpYDrawn : settings->idleNoiseRotAmpYSheathed;
 				float rotZ = weaponDrawn ? settings->idleNoiseRotAmpZDrawn : settings->idleNoiseRotAmpZSheathed;
 				
-				targetRotNoise.x = sin3 * rotX * DEG_TO_RAD;  // Slow breathing pitch
-				targetRotNoise.y = sin1 * rotY * DEG_TO_RAD;  // Roll
-				targetRotNoise.z = sin2 * rotZ * DEG_TO_RAD;  // Slight yaw
+				targetRotNoise.x = sin3 * rotX * DEG_TO_RAD * idleBlendFactor;
+				targetRotNoise.y = sin1 * rotY * DEG_TO_RAD * idleBlendFactor;
+				targetRotNoise.z = sin2 * rotZ * DEG_TO_RAD * idleBlendFactor;
+			} else {
+				// Not idle at all - reset noise time so we start fresh next time
+				idleNoiseTime = 0.0f;
 			}
-			// else: targetPosNoise and targetRotNoise remain at 0, causing fade out
-			
-			// Smoothly blend current noise toward target (works for both fade in and fade out)
-			idleNoiseOffset = LerpVector(idleNoiseOffset, targetPosNoise, blendFactor);
-			idleNoiseRotation = LerpVector(idleNoiseRotation, targetRotNoise, blendFactor);
+			// Apply target noise directly - the idleBlendFactor envelope handles smooth transitions
+			idleNoiseOffset = targetPosNoise;
+			idleNoiseRotation = targetRotNoise;
 		}
 		
 		// === UPDATE SPRINT EFFECTS (FOV + BLUR) ===
