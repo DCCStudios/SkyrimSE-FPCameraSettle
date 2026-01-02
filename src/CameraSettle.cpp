@@ -355,6 +355,7 @@ namespace CameraSettle
 			const auto& sprintSettings = settings->GetActionSettingsForState(ActionType::SprintForward, weaponDrawn);
 			ApplyImpulse(movementSpring, movementBlend, sprintSettings, globalMult, settings);
 			timeSinceAction = 0.0f;
+			idleNoiseAllowedAfterSprint = false;  // Block idle noise until EndAnimatedCameraDelta
 			if (settings->debugLogging) logger::info("[FPCameraSettle] Action: Sprint Start");
 		} else if (!isSprinting && wasSprinting) {
 			if (!sprintStopTriggeredByAnim) {
@@ -603,6 +604,7 @@ namespace CameraSettle
 				ApplyImpulse(movementSpring, movementBlend, reverseSettings, globalMult, settings);
 				timeSinceAction = 0.0f;
 				sprintStopTriggeredByAnim = true;
+				idleNoiseAllowedAfterSprint = true;  // Allow idle noise to blend in now
 				if (settings->debugLogging) logger::info("[FPCameraSettle] Action: Sprint Stop (anim event)");
 			}
 		}
@@ -768,7 +770,8 @@ namespace CameraSettle
 			bool isNotInAction = !playerState->IsSneaking() && !playerState->IsSwimming() && 
 			                     !hasActiveActions && !hasPendingBlends;
 			
-			bool isIdle = isGrounded && isStandingStill && isNotInAction;
+			// Idle noise can only start after sprint if EndAnimatedCameraDelta has fired
+			bool isIdle = isGrounded && isStandingStill && isNotInAction && idleNoiseAllowedAfterSprint;
 			bool noiseEnabled = weaponDrawn ? settings->idleNoiseEnabledDrawn : settings->idleNoiseEnabledSheathed;
 			
 			// Calculate target noise values (what we want to blend toward)
@@ -1063,6 +1066,7 @@ namespace CameraSettle
 		hitCooldown = 0.0f;
 		debugFrameCounter = 0;
 		sprintStopTriggeredByAnim = false;
+		idleNoiseAllowedAfterSprint = true;
 		
 		// Reset performance caches
 		cachedNiCamera = nullptr;

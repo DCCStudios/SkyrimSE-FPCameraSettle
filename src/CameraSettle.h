@@ -170,6 +170,9 @@ namespace CameraSettle
 		// Sprint stop tracking (for anim event vs state fallback)
 		bool sprintStopTriggeredByAnim{ false };
 		
+		// Idle noise from sprint - only allow after EndAnimatedCameraDelta fires
+		bool idleNoiseAllowedAfterSprint{ true };
+		
 		// === PERFORMANCE CACHES ===
 		// Cached NiCamera pointer (avoid RTTI cast every frame)
 		RE::NiCamera* cachedNiCamera{ nullptr };
