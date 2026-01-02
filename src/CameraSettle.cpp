@@ -743,6 +743,7 @@ namespace CameraSettle
 			// - Not sneaking
 			// - Not swimming
 			// - No active springs from other actions (movement, jump, sneak, hit, archery)
+			// - No active sprint effects (FOV/blur still blending out)
 			auto* playerState = player->AsActorState();
 			
 			bool hasActiveActions = movementSpring.IsActive() || jumpSpring.IsActive() || 
@@ -750,10 +751,13 @@ namespace CameraSettle
 			bool hasPendingBlends = movementBlend.active || jumpBlend.active || 
 			                        sneakBlend.active || hitBlend.active || archeryBlend.active;
 			
+			// Check if sprint effects are still blending out
+			bool hasActiveSprintEffects = std::abs(currentFovOffset) > 0.1f || std::abs(currentBlurStrength) > 0.01f;
+			
 			bool isGrounded = !wasInAir && !player->IsInMidair();
 			bool isStandingStill = !wasMoving && !playerState->IsSprinting();
 			bool isNotInAction = !playerState->IsSneaking() && !playerState->IsSwimming() && 
-			                     !hasActiveActions && !hasPendingBlends;
+			                     !hasActiveActions && !hasPendingBlends && !hasActiveSprintEffects;
 			
 			bool isIdle = isGrounded && isStandingStill && isNotInAction;
 			
