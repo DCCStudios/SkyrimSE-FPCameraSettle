@@ -830,12 +830,11 @@ namespace CameraSettle
 			float blurBlendFactor = 1.0f - std::pow(1.0f - std::min(settings->sprintBlurBlendSpeed * a_delta, 0.99f), 1.0f);
 			currentBlurStrength = currentBlurStrength + (targetBlurStrength - currentBlurStrength) * blurBlendFactor;
 			
-			// Apply blur using IMOD DOF (same approach as Distant-Blur)
-			if (sprintImod && sprintImod->dof.strength) {
-				// Update DOF strength and range
-				// Range controls how far the blur extends, strength controls intensity
-				sprintImod->dof.strength->floatValue = currentBlurStrength;
-				sprintImod->dof.range->floatValue = 100.0f * currentBlurStrength;  // Scale range with strength
+			// Apply blur using IMOD radial blur (copied from GetHit IMOD)
+			if (sprintImod && sprintImod->radialBlur.strength) {
+				// Update radial blur strength
+				// The GetHit IMOD uses interpolators, we modify the floatValue directly
+				sprintImod->radialBlur.strength->floatValue = currentBlurStrength;
 				
 				if (currentBlurStrength > 0.01f) {
 					if (!blurEffectActive) {
@@ -843,7 +842,7 @@ namespace CameraSettle
 						sprintImodInstance = RE::ImageSpaceModifierInstanceForm::Trigger(sprintImod, 1.0f, nullptr);
 						blurEffectActive = true;
 						if (settings->debugLogging) {
-							logger::info("[FPCameraSettle] Sprint blur activated (strength: {:.2f})", currentBlurStrength);
+							logger::info("[FPCameraSettle] Sprint radial blur activated (strength: {:.2f})", currentBlurStrength);
 						}
 					}
 				} else if (blurEffectActive) {
@@ -852,7 +851,7 @@ namespace CameraSettle
 					sprintImodInstance = nullptr;
 					blurEffectActive = false;
 					if (settings->debugLogging) {
-						logger::info("[FPCameraSettle] Sprint blur deactivated");
+						logger::info("[FPCameraSettle] Sprint radial blur deactivated");
 					}
 				}
 			}
@@ -1135,35 +1134,34 @@ namespace CameraSettle
 	}
 	
 	// Initialize the IMOD for sprint blur effect
-	// Uses the same approach as Distant-Blur: find a source IMOD, copy it, modify DOF values
+	// Uses the GetHit IMOD (0x162) which has proper radial blur setup
 	void InitializeSprintBlurIMOD()
 	{
 		auto* manager = CameraSettleManager::GetSingleton();
 		
-		// Find a source IMOD with DOF set up - FormID 0x2FBB2 is the vanilla DOF IMOD
-		// that Distant-Blur uses
+		// Find the GetHit IMOD (FormID 0x162) which has radial blur configured
 		RE::TESImageSpaceModifier* sourceImod = nullptr;
 		
-		// Try the known vanilla DOF IMOD first
-		auto* form = RE::TESForm::LookupByID(0x2FBB2);
+		auto* form = RE::TESForm::LookupByID(0x162);
 		if (form) {
 			sourceImod = form->As<RE::TESImageSpaceModifier>();
-			if (sourceImod && sourceImod->dof.strength) {
-				logger::info("[FPCameraSettle] Found vanilla DOF IMOD (FormID 0x2FBB2)");
+			if (sourceImod && sourceImod->radialBlur.strength) {
+				logger::info("[FPCameraSettle] Found GetHit IMOD (FormID 0x162) with radial blur");
 			} else {
+				logger::warn("[FPCameraSettle] GetHit IMOD found but radialBlur.strength is null");
 				sourceImod = nullptr;
 			}
 		}
 		
-		// If vanilla IMOD not found, search all IMODs for one with DOF
+		// Fallback: search all IMODs for one with radial blur
 		if (!sourceImod) {
 			auto* dataHandler = RE::TESDataHandler::GetSingleton();
 			if (dataHandler) {
 				for (auto* imod : dataHandler->GetFormArray<RE::TESImageSpaceModifier>()) {
-					if (imod && imod->dof.strength) {
+					if (imod && imod->radialBlur.strength) {
 						sourceImod = imod;
 						const char* editorID = imod->GetFormEditorID();
-						logger::info("[FPCameraSettle] Found source DOF IMOD: {} (FormID: {:X})", 
+						logger::info("[FPCameraSettle] Found source radial blur IMOD: {} (FormID: {:X})", 
 							editorID ? editorID : "unknown", imod->GetFormID());
 						break;
 					}
@@ -1172,7 +1170,7 @@ namespace CameraSettle
 		}
 		
 		if (!sourceImod) {
-			logger::error("[FPCameraSettle] No source IMOD with DOF found - blur effect disabled");
+			logger::error("[FPCameraSettle] No source IMOD with radial blur found - blur effect disabled");
 			manager->sprintImod = nullptr;
 			return;
 		}
@@ -1191,7 +1189,7 @@ namespace CameraSettle
 			return;
 		}
 		
-		// Copy ALL data from source IMOD (exactly like Distant-Blur does)
+		// Copy ALL data from source IMOD
 		manager->sprintImod->formFlags            = sourceImod->formFlags;
 		manager->sprintImod->formType             = sourceImod->formType;
 		manager->sprintImod->bloom                = sourceImod->bloom;
@@ -1211,7 +1209,7 @@ namespace CameraSettle
 			dataHandler->GetFormArray<RE::TESImageSpaceModifier>().push_back(manager->sprintImod);
 		}
 		
-		logger::info("[FPCameraSettle] Sprint blur IMOD created successfully");
+		logger::info("[FPCameraSettle] Sprint blur IMOD created successfully (using radial blur from GetHit)");
 	}
 
 	void Install()
