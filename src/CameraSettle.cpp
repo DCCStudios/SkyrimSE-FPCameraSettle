@@ -522,27 +522,22 @@ namespace CameraSettle
 			return RE::BSEventNotifyControl::kContinue;
 		}
 		
-		// Filter out magic/spell damage - only allow weapon and projectile hits
-		// This prevents continuous triggering from damage over time effects
-		// a_event->source is a FormID, need to look it up
+		// Filter out continuous damage effects (like poison, burning, etc.)
+		// Allow: weapons, projectiles, ammo, explosions, hazards, and environmental damage
+		// The cooldown system handles preventing spam from rapid-fire damage
 		if (a_event->source != 0) {
 			RE::TESForm* sourceForm = RE::TESForm::LookupByID(a_event->source);
 			if (sourceForm) {
 				auto formType = sourceForm->GetFormType();
-				// Only allow weapons (kWeapon), projectiles (kProjectile), and ammo (kAmmo)
-				// Reject spells (kSpell), enchantments (kEnchantment), magic effects (kMagicEffect), etc.
-				if (formType != RE::FormType::Weapon && 
-				    formType != RE::FormType::Projectile && 
-				    formType != RE::FormType::Ammo) {
+				// Filter out enchantments and magic effects (often DoT sources)
+				// Allow everything else: weapons, projectiles, ammo, spells (missile/aoe), explosions, etc.
+				if (formType == RE::FormType::Enchantment || 
+				    formType == RE::FormType::MagicEffect) {
 					return RE::BSEventNotifyControl::kContinue;
 				}
 			}
 		}
-		
-		// Also filter out hits with no cause (often environmental/magic DoT)
-		if (!a_event->cause.get()) {
-			return RE::BSEventNotifyControl::kContinue;
-		}
+		// Note: Hits with no cause (environmental) are now allowed
 		
 		bool weaponDrawn = player->AsActorState()->IsWeaponDrawn();
 		float stateMult = weaponDrawn ? settings->weaponDrawnMult : settings->weaponSheathedMult;
@@ -830,9 +825,11 @@ namespace CameraSettle
 		
 		// === UPDATE SPRINT EFFECTS (FOV + BLUR) ===
 		{
-			// Use sprint state, but also check if the EndAnimatedCameraDelta event fired
-			// which signals the sprint stop animation has started (blend out early)
-			bool isSprinting = wasSprinting && !sprintStopTriggeredByAnim;
+			// Check actual current sprint state (not cached) for smooth interruption handling
+			// Also check if the EndAnimatedCameraDelta event fired for early blend out
+			auto* playerState = player->AsActorState();
+			bool actuallySprintingNow = playerState && playerState->IsSprinting() && !player->IsInMidair();
+			bool isSprinting = actuallySprintingNow && !sprintStopTriggeredByAnim;
 			
 			// Calculate target FOV offset
 			float targetFovOffset = 0.0f;
