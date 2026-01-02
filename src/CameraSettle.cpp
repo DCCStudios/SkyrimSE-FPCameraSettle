@@ -806,7 +806,9 @@ namespace CameraSettle
 		
 		// === UPDATE SPRINT EFFECTS (FOV + BLUR) ===
 		{
-			bool isSprinting = wasSprinting;  // Use our tracked sprint state
+			// Use sprint state, but also check if the EndAnimatedCameraDelta event fired
+			// which signals the sprint stop animation has started (blend out early)
+			bool isSprinting = wasSprinting && !sprintStopTriggeredByAnim;
 			
 			// Calculate target FOV offset
 			float targetFovOffset = 0.0f;
