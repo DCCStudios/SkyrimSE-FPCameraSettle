@@ -820,6 +820,11 @@ namespace CameraSettle
 			float fovBlendFactor = 1.0f - std::pow(1.0f - std::min(settings->sprintFovBlendSpeed * a_delta, 0.99f), 1.0f);
 			currentFovOffset = currentFovOffset + (targetFovOffset - currentFovOffset) * fovBlendFactor;
 			
+			// Snap to target when very close to ensure complete blend
+			if (std::abs(currentFovOffset - targetFovOffset) < 0.01f) {
+				currentFovOffset = targetFovOffset;
+			}
+			
 			// Calculate target blur strength
 			float targetBlurStrength = 0.0f;
 			if (settings->sprintBlurEnabled && isSprinting) {
@@ -979,18 +984,20 @@ namespace CameraSettle
 		}
 		
 		// Apply FOV offset (for sprint effect)
-		if (std::abs(currentFovOffset) > 0.01f) {
-			// Capture base FOV if not done yet
-			if (!fovCaptured) {
-				baseFov = a_camera->worldFOV;
-				fovCaptured = true;
+		// Capture base FOV on first use
+		if (!fovCaptured && isInFirstPerson) {
+			baseFov = a_camera->worldFOV;
+			fovCaptured = true;
+		}
+		
+		if (fovCaptured) {
+			// Snap very small offsets to zero to complete the blend
+			if (std::abs(currentFovOffset) < 0.001f) {
+				currentFovOffset = 0.0f;
 			}
 			
-			// Apply FOV change
+			// Always apply FOV from base + offset to ensure smooth transitions
 			a_camera->worldFOV = baseFov + currentFovOffset;
-		} else if (fovCaptured && std::abs(currentFovOffset) <= 0.01f) {
-			// Reset to base FOV when effect is off
-			a_camera->worldFOV = baseFov;
 		}
 		
 		// Update node with dirty flag (like ImprovedCameraSE's Helper::UpdateNode)
@@ -1044,7 +1051,14 @@ namespace CameraSettle
 		idleNoiseOffset = { 0.0f, 0.0f, 0.0f };
 		idleNoiseRotation = { 0.0f, 0.0f, 0.0f };
 		
-		// Reset sprint effects state
+		// Reset sprint effects state - restore FOV before resetting
+		if (fovCaptured) {
+			// Restore original FOV
+			auto* camera = RE::PlayerCamera::GetSingleton();
+			if (camera) {
+				camera->worldFOV = baseFov;
+			}
+		}
 		currentFovOffset = 0.0f;
 		currentBlurStrength = 0.0f;
 		fovCaptured = false;
