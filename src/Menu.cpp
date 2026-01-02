@@ -266,6 +266,15 @@ namespace Menu
 			
 			ImGui::BeginDisabled(!State::editMode);
 			
+			// Shared blend time setting
+			if (SliderFloatWithTooltip("Blend Time", &settings->idleNoiseBlendTime, 0.05f, 1.0f, "%.2f sec",
+				"How long to blend in/out the idle noise when transitioning\n"
+				"Lower = faster transition\n"
+				"Higher = smoother, slower transition")) {
+				MarkSettingsChanged();
+			}
+			ImGui::Spacing();
+			
 			// === WEAPON DRAWN ===
 			ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.4f, 0.2f, 0.2f, 0.6f));
 			if (ImGui::TreeNode("Weapon Drawn##IdleNoise")) {

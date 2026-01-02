@@ -122,6 +122,9 @@ public:
 	float idleNoiseRotAmpZSheathed{ 0.08f };
 	float idleNoiseFrequencySheathed{ 0.25f };
 	
+	// Shared idle noise setting
+	float idleNoiseBlendTime{ 0.25f };        // Blend in/out time in seconds
+	
 	// === SPRINT EFFECTS ===
 	bool  sprintFovEnabled{ true };
 	float sprintFovDelta{ 10.0f };            // FOV increase when sprinting (degrees)

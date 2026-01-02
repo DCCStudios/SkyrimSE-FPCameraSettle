@@ -337,6 +337,9 @@ void Settings::Load()
 	idleNoiseRotAmpZSheathed = static_cast<float>(ini.GetDoubleValue("IdleNoise_Sheathed", "fRotAmpZ", idleNoiseRotAmpZSheathed));
 	idleNoiseFrequencySheathed = static_cast<float>(ini.GetDoubleValue("IdleNoise_Sheathed", "fFrequency", idleNoiseFrequencySheathed));
 	
+	// Load shared idle noise settings
+	idleNoiseBlendTime = static_cast<float>(ini.GetDoubleValue("IdleNoise", "fBlendTime", idleNoiseBlendTime));
+	
 	// Load sprint effects settings
 	sprintFovEnabled = ini.GetBoolValue("SprintEffects", "bFovEnabled", sprintFovEnabled);
 	sprintFovDelta = static_cast<float>(ini.GetDoubleValue("SprintEffects", "fFovDelta", sprintFovDelta));
@@ -445,6 +448,9 @@ void Settings::Save()
 	ini.SetDoubleValue("IdleNoise_Sheathed", "fRotAmpY", idleNoiseRotAmpYSheathed, "; Rotation amplitude roll (degrees)");
 	ini.SetDoubleValue("IdleNoise_Sheathed", "fRotAmpZ", idleNoiseRotAmpZSheathed, "; Rotation amplitude yaw (degrees)");
 	ini.SetDoubleValue("IdleNoise_Sheathed", "fFrequency", idleNoiseFrequencySheathed, "; Noise frequency (cycles per second)");
+	
+	// Shared idle noise settings
+	ini.SetDoubleValue("IdleNoise", "fBlendTime", idleNoiseBlendTime, "; Blend in/out time in seconds");
 	
 	// Sprint effects
 	ini.SetBoolValue("SprintEffects", "bFovEnabled", sprintFovEnabled, "; Enable FOV increase when sprinting");
