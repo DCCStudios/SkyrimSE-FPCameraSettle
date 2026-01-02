@@ -1,5 +1,6 @@
 #include "CameraSettle.h"
 #include "Settings.h"
+#include "Graphics.h"
 
 namespace CameraSettle
 {
@@ -830,39 +831,22 @@ namespace CameraSettle
 			float blurBlendFactor = 1.0f - std::pow(1.0f - std::min(settings->sprintBlurBlendSpeed * a_delta, 0.99f), 1.0f);
 			currentBlurStrength = currentBlurStrength + (targetBlurStrength - currentBlurStrength) * blurBlendFactor;
 			
-			// Apply radial blur directly through ImageSpaceManager
-			auto* imageSpaceManager = RE::ImageSpaceManager::GetSingleton();
-			if (imageSpaceManager && currentBlurStrength > 0.001f) {
-				// Radial blur parameters in ImageSpaceModData:
-				// kRadialBlurStrength = 6 - main blur intensity
-				// kRadialBlurRampup = 7 - unused for our purposes (instant)
-				// kRadialBlurStart = 8 - blur start time (0 for instant)
-				// kRadialBlurCenterX = 11 - blur center X (0.5 = screen center)
-				// kRadialBlurCenterY = 12 - blur center Y (0.5 = screen center)
+			// Apply radial blur through custom shader system
+			auto* blurManager = Graphics::RadialBlurManager::GetSingleton();
+			if (blurManager && blurManager->IsInitialized()) {
+				blurManager->SetBlurStrength(currentBlurStrength);
+				blurManager->SetBlurCenter(0.5f, 0.5f);  // Screen center
 				
-				imageSpaceManager->data.modData.data[RE::ImageSpaceModData::kRadialBlurStrength] = currentBlurStrength;
-				imageSpaceManager->data.modData.data[RE::ImageSpaceModData::kRadialBlurRampup] = 0.0f;
-				imageSpaceManager->data.modData.data[RE::ImageSpaceModData::kRadialBlurStart] = 0.0f;
-				imageSpaceManager->data.modData.data[RE::ImageSpaceModData::kRadialBlurRampdown] = 0.0f;
-				imageSpaceManager->data.modData.data[RE::ImageSpaceModData::kRadialBlurDownStart] = 0.0f;
-				imageSpaceManager->data.modData.data[RE::ImageSpaceModData::kRadialBlurCenterX] = 0.5f;  // Screen center
-				imageSpaceManager->data.modData.data[RE::ImageSpaceModData::kRadialBlurCenterY] = 0.5f;  // Screen center
-				
-				// Set modAmount to apply the effect
-				imageSpaceManager->data.modAmount = 1.0f;
-				
-				if (!blurEffectActive) {
+				if (currentBlurStrength > 0.001f && !blurEffectActive) {
 					blurEffectActive = true;
 					if (settings->debugLogging) {
 						logger::info("[FPCameraSettle] Sprint blur activated (strength: {:.2f})", currentBlurStrength);
 					}
-				}
-			} else if (blurEffectActive && imageSpaceManager) {
-				// Clear radial blur when not sprinting
-				imageSpaceManager->data.modData.data[RE::ImageSpaceModData::kRadialBlurStrength] = 0.0f;
-				blurEffectActive = false;
-				if (settings->debugLogging) {
-					logger::info("[FPCameraSettle] Sprint blur deactivated");
+				} else if (currentBlurStrength <= 0.001f && blurEffectActive) {
+					blurEffectActive = false;
+					if (settings->debugLogging) {
+						logger::info("[FPCameraSettle] Sprint blur deactivated");
+					}
 				}
 			}
 		}

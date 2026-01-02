@@ -38,6 +38,7 @@ set(SOURCES
 	src/Settings.cpp
 	src/CameraSettle.cpp
 	src/Menu.cpp
+	src/Graphics.cpp
 )
 
 set(HEADERS
@@ -46,6 +47,7 @@ set(HEADERS
 	src/CameraSettle.h
 	src/Menu.h
 	src/SKSEMenuFramework.h
+	src/Graphics.h
 )
 
 # Create DLL
