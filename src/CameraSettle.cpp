@@ -761,7 +761,6 @@ namespace CameraSettle
 			// - Not sneaking
 			// - Not swimming
 			// - No active springs from other actions (movement, jump, sneak, hit, archery)
-			// Note: Idle noise blends in/out simultaneously with sprint effects for smooth transitions
 			auto* playerState = player->AsActorState();
 			
 			bool hasActiveActions = movementSpring.IsActive() || jumpSpring.IsActive() || 
@@ -775,6 +774,15 @@ namespace CameraSettle
 			                     !hasActiveActions && !hasPendingBlends;
 			
 			bool isIdle = isGrounded && isStandingStill && isNotInAction;
+			
+			// Track idle state transitions to reset noise phase
+			static bool wasIdle = false;
+			if (isIdle && !wasIdle) {
+				// Just became idle - reset noise time so sine waves start from 0
+				// This ensures smooth blend-in from zero offset
+				idleNoiseTime = 0.0f;
+			}
+			wasIdle = isIdle;
 			
 			// Get appropriate idle noise settings based on weapon state
 			bool noiseEnabled = weaponDrawn ? settings->idleNoiseEnabledDrawn : settings->idleNoiseEnabledSheathed;
