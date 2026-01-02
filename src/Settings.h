@@ -130,6 +130,8 @@ public:
 	bool  sprintBlurEnabled{ false };
 	float sprintBlurStrength{ 0.3f };         // Radial blur strength (0-1)
 	float sprintBlurBlendSpeed{ 3.0f };       // How fast to blend blur (higher = faster)
+	float sprintBlurRampUp{ 0.1f };           // IMOD ramp up time (seconds) - how fast blur fades in
+	float sprintBlurRampDown{ 0.2f };         // IMOD ramp down time (seconds) - how fast blur fades out
 	
 	// === DEBUG ===
 	bool debugLogging{ false };

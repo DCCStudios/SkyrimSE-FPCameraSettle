@@ -433,7 +433,19 @@ namespace Menu
 					MarkSettingsChanged();
 				}
 				if (SliderFloatWithTooltip("Blend Speed##Blur", &settings->sprintBlurBlendSpeed, 0.5f, 10.0f, "%.1f",
-					"How fast to blend in/out the blur effect\n(higher = faster transition)")) {
+					"How fast the blur strength transitions\n(higher = faster blend in/out)")) {
+					MarkSettingsChanged();
+				}
+				if (SliderFloatWithTooltip("Ramp Up Time", &settings->sprintBlurRampUp, 0.0f, 0.5f, "%.2f sec",
+					"How quickly the blur effect ramps up when triggered\n"
+					"Lower = snappier blur appearance\n"
+					"Higher = gradual blur fade-in")) {
+					MarkSettingsChanged();
+				}
+				if (SliderFloatWithTooltip("Ramp Down Time", &settings->sprintBlurRampDown, 0.0f, 0.5f, "%.2f sec",
+					"How quickly the blur effect fades when stopping\n"
+					"Lower = snappier blur disappearance\n"
+					"Higher = lingering blur fade-out")) {
 					MarkSettingsChanged();
 				}
 			}

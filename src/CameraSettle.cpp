@@ -832,9 +832,16 @@ namespace CameraSettle
 			
 			// Apply blur using IMOD radial blur (copied from GetHit IMOD)
 			if (sprintImod && sprintImod->radialBlur.strength) {
-				// Update radial blur strength
-				// The GetHit IMOD uses interpolators, we modify the floatValue directly
+				// Update radial blur strength and timing parameters
 				sprintImod->radialBlur.strength->floatValue = currentBlurStrength;
+				
+				// Update ramp timings from user settings
+				if (sprintImod->radialBlur.rampUp) {
+					sprintImod->radialBlur.rampUp->floatValue = settings->sprintBlurRampUp;
+				}
+				if (sprintImod->radialBlur.rampDown) {
+					sprintImod->radialBlur.rampDown->floatValue = settings->sprintBlurRampDown;
+				}
 				
 				if (currentBlurStrength > 0.01f) {
 					if (!blurEffectActive) {
@@ -842,7 +849,8 @@ namespace CameraSettle
 						sprintImodInstance = RE::ImageSpaceModifierInstanceForm::Trigger(sprintImod, 1.0f, nullptr);
 						blurEffectActive = true;
 						if (settings->debugLogging) {
-							logger::info("[FPCameraSettle] Sprint radial blur activated (strength: {:.2f})", currentBlurStrength);
+							logger::info("[FPCameraSettle] Sprint radial blur activated (strength: {:.2f}, rampUp: {:.2f}s, rampDown: {:.2f}s)", 
+								currentBlurStrength, settings->sprintBlurRampUp, settings->sprintBlurRampDown);
 						}
 					}
 				} else if (blurEffectActive) {
