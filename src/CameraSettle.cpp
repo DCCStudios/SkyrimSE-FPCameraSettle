@@ -830,27 +830,39 @@ namespace CameraSettle
 			float blurBlendFactor = 1.0f - std::pow(1.0f - std::min(settings->sprintBlurBlendSpeed * a_delta, 0.99f), 1.0f);
 			currentBlurStrength = currentBlurStrength + (targetBlurStrength - currentBlurStrength) * blurBlendFactor;
 			
-			// Update blur IMOD (if available)
-			// Note: Radial blur requires a properly set up IMOD which is complex
-			// For now, we just control activation/deactivation with a fixed source IMOD
-			if (sprintImod && sprintImod->radialBlur.strength) {
-				// Activate/deactivate blur effect based on strength threshold
-				if (currentBlurStrength > 0.01f) {
-					if (!blurEffectActive) {
-						// Trigger with intensity based on our blend
-						sprintImodInstance = RE::ImageSpaceModifierInstanceForm::Trigger(sprintImod, currentBlurStrength, nullptr);
-						blurEffectActive = true;
-						if (settings->debugLogging) {
-							logger::info("[FPCameraSettle] Sprint blur activated (strength: {:.2f})", currentBlurStrength);
-						}
-					}
-				} else if (blurEffectActive) {
-					RE::ImageSpaceModifierInstanceForm::Stop(sprintImod);
-					sprintImodInstance = nullptr;
-					blurEffectActive = false;
+			// Apply radial blur directly through ImageSpaceManager
+			auto* imageSpaceManager = RE::ImageSpaceManager::GetSingleton();
+			if (imageSpaceManager && currentBlurStrength > 0.001f) {
+				// Radial blur parameters in ImageSpaceModData:
+				// kRadialBlurStrength = 6 - main blur intensity
+				// kRadialBlurRampup = 7 - unused for our purposes (instant)
+				// kRadialBlurStart = 8 - blur start time (0 for instant)
+				// kRadialBlurCenterX = 11 - blur center X (0.5 = screen center)
+				// kRadialBlurCenterY = 12 - blur center Y (0.5 = screen center)
+				
+				imageSpaceManager->data.modData.data[RE::ImageSpaceModData::kRadialBlurStrength] = currentBlurStrength;
+				imageSpaceManager->data.modData.data[RE::ImageSpaceModData::kRadialBlurRampup] = 0.0f;
+				imageSpaceManager->data.modData.data[RE::ImageSpaceModData::kRadialBlurStart] = 0.0f;
+				imageSpaceManager->data.modData.data[RE::ImageSpaceModData::kRadialBlurRampdown] = 0.0f;
+				imageSpaceManager->data.modData.data[RE::ImageSpaceModData::kRadialBlurDownStart] = 0.0f;
+				imageSpaceManager->data.modData.data[RE::ImageSpaceModData::kRadialBlurCenterX] = 0.5f;  // Screen center
+				imageSpaceManager->data.modData.data[RE::ImageSpaceModData::kRadialBlurCenterY] = 0.5f;  // Screen center
+				
+				// Set modAmount to apply the effect
+				imageSpaceManager->data.modAmount = 1.0f;
+				
+				if (!blurEffectActive) {
+					blurEffectActive = true;
 					if (settings->debugLogging) {
-						logger::info("[FPCameraSettle] Sprint blur deactivated");
+						logger::info("[FPCameraSettle] Sprint blur activated (strength: {:.2f})", currentBlurStrength);
 					}
+				}
+			} else if (blurEffectActive && imageSpaceManager) {
+				// Clear radial blur when not sprinting
+				imageSpaceManager->data.modData.data[RE::ImageSpaceModData::kRadialBlurStrength] = 0.0f;
+				blurEffectActive = false;
+				if (settings->debugLogging) {
+					logger::info("[FPCameraSettle] Sprint blur deactivated");
 				}
 			}
 		}
@@ -1125,57 +1137,25 @@ namespace CameraSettle
 	}
 	
 	// Initialize the IMOD for sprint blur effect
-	// Note: This searches for an existing radial blur IMOD to use as a template
+	// Uses the ImageSpaceManager to apply radial blur directly
 	void InitializeSprintBlurIMOD()
 	{
 		auto* manager = CameraSettleManager::GetSingleton();
 		
-		// Look for an existing IMOD with radial blur that we can use as a template
-		auto* dataHandler = RE::TESDataHandler::GetSingleton();
-		if (!dataHandler) {
-			logger::error("[FPCameraSettle] Failed to get data handler for IMOD initialization");
-			return;
+		// For radial blur, we'll use RE::ImageSpaceManager directly
+		// which provides functions to control blur without needing a custom IMOD
+		
+		// Check if ImageSpaceManager is available
+		auto* imageSpaceManager = RE::ImageSpaceManager::GetSingleton();
+		if (!imageSpaceManager) {
+			logger::warn("[FPCameraSettle] ImageSpaceManager not available - blur effect may not work");
 		}
 		
-		// Search for a suitable source IMOD with radial blur
-		RE::TESImageSpaceModifier* sourceImod = nullptr;
-		for (auto* imod : dataHandler->GetFormArray<RE::TESImageSpaceModifier>()) {
-			if (imod && imod->radialBlur.strength) {
-				sourceImod = imod;
-				logger::info("[FPCameraSettle] Found source IMOD for blur: {}", 
-					imod->GetFormEditorID() ? imod->GetFormEditorID() : "unknown");
-				break;
-			}
-		}
+		// We don't need a custom IMOD for radial blur
+		// The blur will be applied directly through ImageSpaceManager
+		manager->sprintImod = nullptr;
 		
-		if (!sourceImod) {
-			logger::warn("[FPCameraSettle] No source IMOD with radial blur found - blur effect disabled");
-			return;
-		}
-		
-		// Create runtime IMOD using factory
-		const auto factory = RE::IFormFactory::GetConcreteFormFactoryByType<RE::TESImageSpaceModifier>();
-		if (!factory) {
-			logger::error("[FPCameraSettle] Failed to get IMOD factory");
-			return;
-		}
-		
-		manager->sprintImod = factory->Create();
-		if (!manager->sprintImod) {
-			logger::error("[FPCameraSettle] Failed to create sprint blur IMOD");
-			return;
-		}
-		
-		// Copy data from source IMOD
-		manager->sprintImod->formFlags = sourceImod->formFlags;
-		manager->sprintImod->radialBlur = sourceImod->radialBlur;
-		
-		manager->sprintImod->SetFormEditorID("FPCameraSettleSprintBlur");
-		
-		// Add to data handler
-		dataHandler->GetFormArray<RE::TESImageSpaceModifier>().push_back(manager->sprintImod);
-		
-		logger::info("[FPCameraSettle] Sprint blur IMOD created successfully");
+		logger::info("[FPCameraSettle] Sprint blur initialized (using ImageSpaceManager)");
 	}
 
 	void Install()
