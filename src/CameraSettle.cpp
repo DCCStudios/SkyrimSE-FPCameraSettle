@@ -760,6 +760,14 @@ namespace CameraSettle
 			// Get appropriate idle noise settings based on weapon state
 			bool noiseEnabled = weaponDrawn ? settings->idleNoiseEnabledDrawn : settings->idleNoiseEnabledSheathed;
 			
+			// Blend speed for smooth transitions (same rate for fade in and fade out)
+			constexpr float IDLE_BLEND_SPEED = 3.0f;  // Lower = slower/smoother transition
+			float blendFactor = std::min(1.0f, IDLE_BLEND_SPEED * a_delta);
+			
+			// Calculate target noise values
+			RE::NiPoint3 targetPosNoise = { 0.0f, 0.0f, 0.0f };
+			RE::NiPoint3 targetRotNoise = { 0.0f, 0.0f, 0.0f };
+			
 			if (isIdle && noiseEnabled) {
 				float freq = weaponDrawn ? settings->idleNoiseFrequencyDrawn : settings->idleNoiseFrequencySheathed;
 				
@@ -771,29 +779,29 @@ namespace CameraSettle
 				float sin2 = std::sin(idleNoiseTime * 1.37f + 1.2f);  // Slightly different frequency
 				float sin3 = std::sin(idleNoiseTime * 0.73f + 2.5f);  // Even slower frequency
 				
-				// Calculate position noise
+				// Calculate target position noise
 				float posX = weaponDrawn ? settings->idleNoisePosAmpXDrawn : settings->idleNoisePosAmpXSheathed;
 				float posY = weaponDrawn ? settings->idleNoisePosAmpYDrawn : settings->idleNoisePosAmpYSheathed;
 				float posZ = weaponDrawn ? settings->idleNoisePosAmpZDrawn : settings->idleNoisePosAmpZSheathed;
 				
-				idleNoiseOffset.x = sin1 * posX;
-				idleNoiseOffset.y = sin2 * posY;
-				idleNoiseOffset.z = sin3 * posZ;  // Breathing effect
+				targetPosNoise.x = sin1 * posX;
+				targetPosNoise.y = sin2 * posY;
+				targetPosNoise.z = sin3 * posZ;  // Breathing effect
 				
-				// Calculate rotation noise (convert degrees to radians)
+				// Calculate target rotation noise (convert degrees to radians)
 				float rotX = weaponDrawn ? settings->idleNoiseRotAmpXDrawn : settings->idleNoiseRotAmpXSheathed;
 				float rotY = weaponDrawn ? settings->idleNoiseRotAmpYDrawn : settings->idleNoiseRotAmpYSheathed;
 				float rotZ = weaponDrawn ? settings->idleNoiseRotAmpZDrawn : settings->idleNoiseRotAmpZSheathed;
 				
-				idleNoiseRotation.x = sin3 * rotX * DEG_TO_RAD;  // Slow breathing pitch
-				idleNoiseRotation.y = sin1 * rotY * DEG_TO_RAD;  // Roll
-				idleNoiseRotation.z = sin2 * rotZ * DEG_TO_RAD;  // Slight yaw
-			} else {
-				// Fade out noise smoothly when not idle
-				float fadeSpeed = 5.0f * a_delta;
-				idleNoiseOffset = LerpVector(idleNoiseOffset, { 0.0f, 0.0f, 0.0f }, fadeSpeed);
-				idleNoiseRotation = LerpVector(idleNoiseRotation, { 0.0f, 0.0f, 0.0f }, fadeSpeed);
+				targetRotNoise.x = sin3 * rotX * DEG_TO_RAD;  // Slow breathing pitch
+				targetRotNoise.y = sin1 * rotY * DEG_TO_RAD;  // Roll
+				targetRotNoise.z = sin2 * rotZ * DEG_TO_RAD;  // Slight yaw
 			}
+			// else: targetPosNoise and targetRotNoise remain at 0, causing fade out
+			
+			// Smoothly blend current noise toward target (works for both fade in and fade out)
+			idleNoiseOffset = LerpVector(idleNoiseOffset, targetPosNoise, blendFactor);
+			idleNoiseRotation = LerpVector(idleNoiseRotation, targetRotNoise, blendFactor);
 		}
 		
 		// === UPDATE SPRINT EFFECTS (FOV + BLUR) ===
