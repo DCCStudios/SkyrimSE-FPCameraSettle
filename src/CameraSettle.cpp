@@ -825,11 +825,17 @@ namespace CameraSettle
 		
 		// === UPDATE SPRINT EFFECTS (FOV + BLUR) ===
 		{
-			// Check actual current sprint state (not cached) for smooth interruption handling
-			// Also check if the EndAnimatedCameraDelta event fired for early blend out
-			auto* playerState = player->AsActorState();
-			bool actuallySprintingNow = playerState && playerState->IsSprinting() && !player->IsInMidair();
-			bool isSprinting = actuallySprintingNow && !sprintStopTriggeredByAnim;
+			// Early-out: skip if sprint effects disabled and no active effects to blend out
+			bool hasActiveSprintEffects = std::abs(currentFovOffset) > 0.001f || std::abs(currentBlurStrength) > 0.001f;
+			bool sprintEffectsEnabled = settings->sprintFovEnabled || settings->sprintBlurEnabled;
+			
+			if (!sprintEffectsEnabled && !hasActiveSprintEffects) {
+				// Nothing to do - skip this section entirely
+			} else {
+				// Only check actual sprint state when we need to (effects enabled or blending out)
+				auto* playerState = player->AsActorState();
+				bool actuallySprintingNow = playerState && playerState->IsSprinting() && !player->IsInMidair();
+				bool isSprinting = actuallySprintingNow && !sprintStopTriggeredByAnim;
 			
 			// Calculate target FOV offset
 			float targetFovOffset = 0.0f;
@@ -894,6 +900,7 @@ namespace CameraSettle
 					}
 				}
 			}
+			}  // end else (sprint effects active)
 		}
 		
 		// Debug logging
