@@ -346,6 +346,7 @@ void Settings::Load()
 	sprintBlurBlendSpeed = static_cast<float>(ini.GetDoubleValue("SprintEffects", "fBlurBlendSpeed", sprintBlurBlendSpeed));
 	sprintBlurRampUp = static_cast<float>(ini.GetDoubleValue("SprintEffects", "fBlurRampUp", sprintBlurRampUp));
 	sprintBlurRampDown = static_cast<float>(ini.GetDoubleValue("SprintEffects", "fBlurRampDown", sprintBlurRampDown));
+	sprintBlurRadius = static_cast<float>(ini.GetDoubleValue("SprintEffects", "fBlurRadius", sprintBlurRadius));
 	
 	// Load debug settings
 	debugLogging = ini.GetBoolValue("Debug", "bDebugLogging", debugLogging);
@@ -454,6 +455,7 @@ void Settings::Save()
 	ini.SetDoubleValue("SprintEffects", "fBlurBlendSpeed", sprintBlurBlendSpeed, "; How fast to blend blur (higher = faster)");
 	ini.SetDoubleValue("SprintEffects", "fBlurRampUp", sprintBlurRampUp, "; IMOD ramp up time in seconds (how fast blur appears)");
 	ini.SetDoubleValue("SprintEffects", "fBlurRampDown", sprintBlurRampDown, "; IMOD ramp down time in seconds (how fast blur fades)");
+	ini.SetDoubleValue("SprintEffects", "fBlurRadius", sprintBlurRadius, "; Blur start radius (0 = blur from center, 1 = edges only)");
 	
 	// Debug settings
 	ini.SetBoolValue("Debug", "bDebugLogging", debugLogging, "; Enable detailed debug logging");

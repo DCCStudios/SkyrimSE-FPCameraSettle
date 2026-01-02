@@ -842,6 +842,11 @@ namespace CameraSettle
 				if (sprintImod->radialBlur.rampDown) {
 					sprintImod->radialBlur.rampDown->floatValue = settings->sprintBlurRampDown;
 				}
+				// Update blur start radius (center clarity)
+				// Higher value = blur starts further from center, keeping center clear
+				if (sprintImod->radialBlur.start) {
+					sprintImod->radialBlur.start->floatValue = settings->sprintBlurRadius;
+				}
 				
 				if (currentBlurStrength > 0.01f) {
 					if (!blurEffectActive) {

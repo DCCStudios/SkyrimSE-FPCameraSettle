@@ -448,6 +448,13 @@ namespace Menu
 					"Higher = lingering blur fade-out")) {
 					MarkSettingsChanged();
 				}
+				if (SliderFloatWithTooltip("Center Clarity", &settings->sprintBlurRadius, 0.0f, 1.0f, "%.2f",
+					"How much of the screen center stays unblurred\n"
+					"0 = blur starts from center (full blur)\n"
+					"0.5 = center half stays clear\n"
+					"1 = only edges are blurred")) {
+					MarkSettingsChanged();
+				}
 			}
 			
 			ImGui::EndDisabled();

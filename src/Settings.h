@@ -132,6 +132,7 @@ public:
 	float sprintBlurBlendSpeed{ 3.0f };       // How fast to blend blur (higher = faster)
 	float sprintBlurRampUp{ 0.1f };           // IMOD ramp up time (seconds) - how fast blur fades in
 	float sprintBlurRampDown{ 0.2f };         // IMOD ramp down time (seconds) - how fast blur fades out
+	float sprintBlurRadius{ 0.5f };           // Blur start radius (0 = from center, 1 = edges only)
 	
 	// === DEBUG ===
 	bool debugLogging{ false };
