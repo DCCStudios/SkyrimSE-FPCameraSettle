@@ -154,6 +154,17 @@ namespace CameraSettle
 		float walkRunBlend{ 0.0f };
 		bool wasWalking{ true };  // Track previous walk/run state
 		
+		// Speed-based blending state
+		float currentSpeed{ 0.0f };          // Current movement speed (0-1 normalized)
+		float speedBlend{ 0.0f };            // Blend factor based on actual speed
+		float movementStartTime{ 0.0f };     // Time when movement started (for grace period)
+		bool wasMovingForGrace{ false };     // Track if we were moving (for grace period)
+		bool walkImpulseBlocked{ false };    // If true, block walk impulse (accelerating to run)
+		
+		// Jump detection state
+		bool didJump{ false };               // True if player actually jumped (not just walked off ledge)
+		float jumpStartZ{ 0.0f };            // Z position when leaving ground (for fall distance)
+		
 		// Settling factor
 		float settlingFactor{ 0.0f };
 		float timeSinceAction{ 0.0f };
@@ -185,9 +196,14 @@ namespace CameraSettle
 		uint32_t lastSettingsVersion{ 0 };       // Track settings changes for cache invalidation
 		
 		// === IDLE NOISE STATE ===
-		float idleNoiseTime{ 0.0f };             // Accumulated time for noise generation
+		// Phase advances continuously (never resets) - the "wave" is always there
+		float idleNoisePhase{ 0.0f };            // Continuous phase, never reset abruptly
+		// Amplitude ramps smoothly when entering/exiting idle (0 to 1)
+		float idleNoiseAmplitude{ 0.0f };        // Current amplitude multiplier
+		// Final noise values (calculated directly, no lerping)
 		RE::NiPoint3 idleNoiseOffset{ 0.0f, 0.0f, 0.0f };    // Current position noise offset
 		RE::NiPoint3 idleNoiseRotation{ 0.0f, 0.0f, 0.0f };  // Current rotation noise offset
+		bool wasInDialogue{ false };             // Track dialogue state for transitions
 		
 	public:
 		// === SPRINT EFFECTS STATE (public for initialization) ===

@@ -12,6 +12,16 @@ enum class ActionType : int
 	RunLeft,
 	RunRight,
 	SprintForward,
+	// Sneak movement actions
+	SneakWalkForward,
+	SneakWalkBackward,
+	SneakWalkLeft,
+	SneakWalkRight,
+	SneakRunForward,
+	SneakRunBackward,
+	SneakRunLeft,
+	SneakRunRight,
+	// Other actions
 	Jump,
 	Land,
 	Sneak,
@@ -101,6 +111,17 @@ public:
 	// === BEHAVIOR ===
 	bool resetOnPause{ false };   // Reset springs when game is paused (menus, console, etc.)
 	
+	// === WALK/RUN BLENDING ===
+	bool  speedBasedBlending{ true };    // Blend walk/run based on actual movement speed instead of binary toggle
+	float walkToRunGracePeriod{ 0.15f }; // Skip walk impulse if player reaches run speed within this time (seconds)
+	
+	// === JUMP/LAND SCALING ===
+	bool  scaleJumpByAirTime{ true };     // Scale jump/land impulse based on air time
+	float jumpMinAirTime{ 0.15f };        // Minimum air time to trigger any landing impulse
+	float jumpMaxAirTimeScale{ 2.0f };    // Maximum air time for scaling purposes
+	float landBaseScale{ 0.3f };          // Base landing impulse scale (always applied)
+	float landAirTimeScale{ 0.7f };       // Additional scale from air time (0 to this value)
+	
 	// === IDLE CAMERA NOISE ===
 	// Weapon Drawn
 	bool  idleNoiseEnabledDrawn{ false };
@@ -124,6 +145,7 @@ public:
 	
 	// Shared idle noise setting
 	float idleNoiseBlendTime{ 0.25f };        // Blend in/out time in seconds
+	bool  dialogueDisableIdleNoise{ false };  // Disable idle noise when in dialogue
 	
 	// === SPRINT EFFECTS ===
 	bool  sprintFovEnabled{ true };
@@ -163,6 +185,15 @@ public:
 	ActionSettings takingHitDrawn;
 	ActionSettings hittingDrawn;
 	ActionSettings arrowReleaseDrawn;
+	// Sneak movement actions (drawn)
+	ActionSettings sneakWalkForwardDrawn;
+	ActionSettings sneakWalkBackwardDrawn;
+	ActionSettings sneakWalkLeftDrawn;
+	ActionSettings sneakWalkRightDrawn;
+	ActionSettings sneakRunForwardDrawn;
+	ActionSettings sneakRunBackwardDrawn;
+	ActionSettings sneakRunLeftDrawn;
+	ActionSettings sneakRunRightDrawn;
 	
 	// Weapon sheathed actions
 	ActionSettings walkForwardSheathed;
@@ -174,6 +205,16 @@ public:
 	ActionSettings runLeftSheathed;
 	ActionSettings runRightSheathed;
 	ActionSettings sprintForwardSheathed;
+	// Sneak movement actions (sheathed)
+	ActionSettings sneakWalkForwardSheathed;
+	ActionSettings sneakWalkBackwardSheathed;
+	ActionSettings sneakWalkLeftSheathed;
+	ActionSettings sneakWalkRightSheathed;
+	ActionSettings sneakRunForwardSheathed;
+	ActionSettings sneakRunBackwardSheathed;
+	ActionSettings sneakRunLeftSheathed;
+	ActionSettings sneakRunRightSheathed;
+	// Other sheathed actions
 	ActionSettings jumpSheathed;
 	ActionSettings landSheathed;
 	ActionSettings sneakSheathed;

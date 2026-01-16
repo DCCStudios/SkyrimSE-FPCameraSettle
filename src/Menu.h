@@ -19,6 +19,8 @@ namespace Menu
 	void DrawHeader();
 	void DrawGeneralSettings();
 	void DrawWeaponStateSettings();
+	void DrawMovementSettings();
+	void DrawJumpSettings();
 	void DrawSettlingSettings();
 	void DrawIdleNoiseSettings();
 	void DrawSprintEffectsSettings();
@@ -37,6 +39,8 @@ namespace Menu
 		// Expansion states
 		static inline bool generalExpanded{ true };
 		static inline bool weaponStateExpanded{ true };
+		static inline bool movementExpanded{ false };
+		static inline bool jumpExpanded{ false };
 		static inline bool settlingExpanded{ false };
 		static inline bool idleNoiseExpanded{ false };
 		static inline bool sprintEffectsExpanded{ false };

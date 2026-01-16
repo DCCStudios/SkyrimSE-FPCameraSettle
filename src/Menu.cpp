@@ -60,6 +60,8 @@ namespace Menu
 		
 		DrawGeneralSettings();
 		DrawWeaponStateSettings();
+		DrawMovementSettings();
+		DrawJumpSettings();
 		DrawSettlingSettings();
 		DrawIdleNoiseSettings();
 		DrawSprintEffectsSettings();
@@ -225,6 +227,94 @@ namespace Menu
 		}
 	}
 	
+	void DrawMovementSettings()
+	{
+		auto* settings = Settings::GetSingleton();
+		
+		if (ImGui::CollapsingHeader("Movement Settings", State::movementExpanded ? ImGuiTreeNodeFlags_DefaultOpen : 0)) {
+			State::movementExpanded = true;
+			
+			ImGui::TextWrapped("Controls walk/run blending and impulse behavior.");
+			ImGui::Spacing();
+			
+			if (CheckboxWithTooltip("Speed-Based Blending", &settings->speedBasedBlending,
+				"Blend walk/run impulses based on actual controller input magnitude.\n\n"
+				"When enabled: Analog sticks will smoothly blend between walk and run\n"
+				"When disabled: Binary walk/run based on toggle key only")) {
+				MarkSettingsChanged();
+			}
+			
+			ImGui::Spacing();
+			
+			if (SliderFloatWithTooltip("Walk-to-Run Grace Period", &settings->walkToRunGracePeriod, 0.0f, 0.5f, "%.2f sec",
+				"If player goes from stationary to running within this time,\n"
+				"the walk impulse is skipped.\n\n"
+				"Prevents jarring walk impulse when you intend to immediately sprint/run.\n"
+				"Set to 0 to disable (always trigger walk impulse).")) {
+				MarkSettingsChanged();
+			}
+		} else {
+			State::movementExpanded = false;
+		}
+	}
+	
+	void DrawJumpSettings()
+	{
+		auto* settings = Settings::GetSingleton();
+		
+		if (ImGui::CollapsingHeader("Jump/Land Settings", State::jumpExpanded ? ImGuiTreeNodeFlags_DefaultOpen : 0)) {
+			State::jumpExpanded = true;
+			
+			ImGui::TextWrapped("Controls jump detection and landing impulse scaling.");
+			ImGui::Spacing();
+			
+			if (CheckboxWithTooltip("Scale by Air Time", &settings->scaleJumpByAirTime,
+				"Scale landing impulse based on how long you were in the air.\n\n"
+				"Also prevents jump impulse when walking off ledges\n"
+				"(only actual jumps trigger the jump impulse).")) {
+				MarkSettingsChanged();
+			}
+			
+			if (settings->scaleJumpByAirTime) {
+				ImGui::Spacing();
+				ImGui::Separator();
+				ImGui::Text("Air Time Thresholds:");
+				
+				if (SliderFloatWithTooltip("Min Air Time", &settings->jumpMinAirTime, 0.0f, 0.5f, "%.2f sec",
+					"Minimum air time to trigger any landing impulse.\n\n"
+					"Drops shorter than this are ignored (stairs, small bumps).\n"
+					"0.1-0.15 = good for most cases")) {
+					MarkSettingsChanged();
+				}
+				
+				if (SliderFloatWithTooltip("Max Air Time Scale", &settings->jumpMaxAirTimeScale, 0.5f, 5.0f, "%.1f sec",
+					"Air time above this is capped for scaling purposes.\n\n"
+					"Higher = longer falls can have bigger impacts")) {
+					MarkSettingsChanged();
+				}
+				
+				ImGui::Spacing();
+				ImGui::Separator();
+				ImGui::Text("Landing Impulse Scale:");
+				
+				if (SliderFloatWithTooltip("Base Scale", &settings->landBaseScale, 0.0f, 1.0f, "%.2f",
+					"Base landing impulse scale (always applied above min air time).\n\n"
+					"0.3 = 30% of configured landing impulse for minimum falls")) {
+					MarkSettingsChanged();
+				}
+				
+				if (SliderFloatWithTooltip("Air Time Scale", &settings->landAirTimeScale, 0.0f, 2.0f, "%.2f",
+					"Additional scale based on air time (added to base).\n\n"
+					"At max air time: total scale = Base + this value\n"
+					"0.7 = adds up to 70% more based on fall duration")) {
+					MarkSettingsChanged();
+				}
+			}
+		} else {
+			State::jumpExpanded = false;
+		}
+	}
+	
 	void DrawSettlingSettings()
 	{
 		auto* settings = Settings::GetSingleton();
@@ -273,6 +363,15 @@ namespace Menu
 				"Higher = smoother, slower transition")) {
 				MarkSettingsChanged();
 			}
+			
+			// Dialogue/Map disable option
+			if (CheckboxWithTooltip("Disable in Menus", &settings->dialogueDisableIdleNoise,
+				"Disable idle camera noise when in dialogue or map menu.\n\n"
+				"When enabled, the idle noise will smoothly blend out\n"
+				"when entering these menus and blend back in after leaving.")) {
+				MarkSettingsChanged();
+			}
+			
 			ImGui::Spacing();
 			
 			// === WEAPON DRAWN ===
@@ -544,6 +643,8 @@ namespace Menu
 				"Walk Forward", "Walk Backward", "Walk Left", "Walk Right",
 				"Run Forward", "Run Backward", "Run Left", "Run Right",
 				"Sprint Forward",
+				"Sneak Walk Forward", "Sneak Walk Backward", "Sneak Walk Left", "Sneak Walk Right",
+				"Sneak Run Forward", "Sneak Run Backward", "Sneak Run Left", "Sneak Run Right",
 				"Jump", "Land",
 				"Sneak", "Un-Sneak",
 				"Taking Hit", "Hitting",

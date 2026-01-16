@@ -243,6 +243,32 @@ namespace CameraSettle
 		}
 	}
 	
+	// Helper function to check if two movement actions are opposite directions
+	bool AreOppositeDirections(ActionType a_action1, ActionType a_action2)
+	{
+		// Check forward/backward opposites
+		bool fwd1 = (a_action1 == ActionType::WalkForward || a_action1 == ActionType::RunForward || 
+		             a_action1 == ActionType::SneakWalkForward || a_action1 == ActionType::SneakRunForward);
+		bool back1 = (a_action1 == ActionType::WalkBackward || a_action1 == ActionType::RunBackward ||
+		              a_action1 == ActionType::SneakWalkBackward || a_action1 == ActionType::SneakRunBackward);
+		bool left1 = (a_action1 == ActionType::WalkLeft || a_action1 == ActionType::RunLeft ||
+		              a_action1 == ActionType::SneakWalkLeft || a_action1 == ActionType::SneakRunLeft);
+		bool right1 = (a_action1 == ActionType::WalkRight || a_action1 == ActionType::RunRight ||
+		               a_action1 == ActionType::SneakWalkRight || a_action1 == ActionType::SneakRunRight);
+		
+		bool fwd2 = (a_action2 == ActionType::WalkForward || a_action2 == ActionType::RunForward ||
+		             a_action2 == ActionType::SneakWalkForward || a_action2 == ActionType::SneakRunForward);
+		bool back2 = (a_action2 == ActionType::WalkBackward || a_action2 == ActionType::RunBackward ||
+		              a_action2 == ActionType::SneakWalkBackward || a_action2 == ActionType::SneakRunBackward);
+		bool left2 = (a_action2 == ActionType::WalkLeft || a_action2 == ActionType::RunLeft ||
+		              a_action2 == ActionType::SneakWalkLeft || a_action2 == ActionType::SneakRunLeft);
+		bool right2 = (a_action2 == ActionType::WalkRight || a_action2 == ActionType::RunRight ||
+		               a_action2 == ActionType::SneakWalkRight || a_action2 == ActionType::SneakRunRight);
+		
+		// Forward vs backward OR left vs right
+		return (fwd1 && back2) || (back1 && fwd2) || (left1 && right2) || (right1 && left2);
+	}
+	
 	ActionType CameraSettleManager::DetectMovementAction(RE::PlayerCharacter* a_player)
 	{
 		auto* playerControls = RE::PlayerControls::GetSingleton();
@@ -260,16 +286,36 @@ namespace CameraSettle
 		bool movingLeft = inputVec.x < -THRESHOLD;
 		bool movingRight = inputVec.x > THRESHOLD;
 		
-		bool isSprinting = a_player->AsActorState()->IsSprinting();
+		auto* actorState = a_player->AsActorState();
+		bool isSprinting = actorState->IsSprinting();
+		bool isSneaking = actorState->IsSneaking();
 		// IsWalking() returns true if the walk/run toggle is set to walk
 		// If not walking, player runs when moving
-		bool isWalking = a_player->AsActorState()->IsWalking();
+		bool isWalking = actorState->IsWalking();
 		
 		// Determine action based on movement
 		if (isSprinting && movingForward) {
 			return ActionType::SprintForward;
 		}
 		
+		// Handle sneak movement
+		if (isSneaking) {
+			if (!isWalking) {
+				// Sneak running
+				if (movingForward) return ActionType::SneakRunForward;
+				if (movingBackward) return ActionType::SneakRunBackward;
+				if (movingLeft) return ActionType::SneakRunLeft;
+				if (movingRight) return ActionType::SneakRunRight;
+			} else {
+				// Sneak walking
+				if (movingForward) return ActionType::SneakWalkForward;
+				if (movingBackward) return ActionType::SneakWalkBackward;
+				if (movingLeft) return ActionType::SneakWalkLeft;
+				if (movingRight) return ActionType::SneakWalkRight;
+			}
+		}
+		
+		// Normal (not sneaking) movement
 		// If walking flag is not set, player runs
 		if (!isWalking) {
 			if (movingForward) return ActionType::RunForward;
@@ -330,23 +376,84 @@ namespace CameraSettle
 		wasSneaking = isSneaking;
 		
 		// === JUMP/LAND DETECTION ===
+		// Track air time for landing impulse scaling
 		if (isInAir) {
 			airTime += a_delta;
 		}
 		
+		// Just left the ground - check if it was an actual jump or just walking off a ledge
 		if (isInAir && !wasInAir) {
-			const auto& jumpSettings = settings->GetActionSettingsForState(ActionType::Jump, weaponDrawn);
-			ApplyImpulse(jumpSpring, jumpBlend, jumpSettings, globalMult, settings);
-			timeSinceAction = 0.0f;
-			if (settings->debugLogging) logger::info("[FPCameraSettle] Action: Jump");
-		} else if (!isInAir && wasInAir && landingCooldown <= 0.0f) {
+			// Check if player actually jumped using behavior graph variable
+			// bAnimationDriven is true during jump animations
+			bool bAnimDriven = false;
+			a_player->GetGraphVariableBool("bAnimationDriven", bAnimDriven);
+			
+			// Also check jumping state
+			bool isJumping = false;
+			a_player->GetGraphVariableBool("IsJumping", isJumping);
+			
+			// Player jumped if either animation driven or in jumping state
+			didJump = bAnimDriven || isJumping;
+			jumpStartZ = a_player->GetPosition().z;
+			
+			// Only apply jump impulse if player actually jumped (not walking off ledge)
+			if (didJump) {
+				const auto& jumpSettings = settings->GetActionSettingsForState(ActionType::Jump, weaponDrawn);
+				ApplyImpulse(jumpSpring, jumpBlend, jumpSettings, globalMult, settings);
+				timeSinceAction = 0.0f;
+				if (settings->debugLogging) logger::info("[FPCameraSettle] Action: Jump (actual jump)");
+			} else {
+				if (settings->debugLogging) logger::info("[FPCameraSettle] Leaving ground (walk off ledge, no jump impulse)");
+			}
+		} 
+		// Just landed
+		else if (!isInAir && wasInAir && landingCooldown <= 0.0f) {
+			// Calculate landing impulse scale based on air time
+			float landingMult = 1.0f;
+			
+			if (settings->scaleJumpByAirTime) {
+				// Only apply landing if air time exceeds minimum
+				if (airTime < settings->jumpMinAirTime) {
+					// Too short of a drop, skip landing impulse
+					if (settings->debugLogging) logger::info("[FPCameraSettle] Short drop (airTime={:.3f}s < min={:.3f}s), skipping land impulse", 
+						airTime, settings->jumpMinAirTime);
+					airTime = 0.0f;
+					didJump = false;
+					wasInAir = isInAir;
+					return;  // Skip the landing impulse entirely
+				}
+				
+				// Calculate normalized air time (0 to 1 based on max scale time)
+				float normalizedAirTime = std::clamp(
+					(airTime - settings->jumpMinAirTime) / (settings->jumpMaxAirTimeScale - settings->jumpMinAirTime), 
+					0.0f, 1.0f
+				);
+				
+				// Base scale always applies, plus additional scale based on air time
+				landingMult = settings->landBaseScale + normalizedAirTime * settings->landAirTimeScale;
+				
+				// If didn't actually jump (just fell), reduce slightly
+				if (!didJump) {
+					landingMult *= 0.8f;
+				}
+			} else {
+				// Old behavior - simple scaling
+				landingMult = std::clamp(0.3f + airTime * 0.7f, 0.3f, 2.0f);
+			}
+			
 			const auto& landSettings = settings->GetActionSettingsForState(ActionType::Land, weaponDrawn);
-			float airTimeMult = std::clamp(0.3f + airTime * 0.7f, 0.3f, 2.0f);
-			ApplyImpulse(jumpSpring, jumpBlend, landSettings, globalMult * airTimeMult, settings);
+			ApplyImpulse(jumpSpring, jumpBlend, landSettings, globalMult * landingMult, settings);
 			timeSinceAction = 0.0f;
 			landingCooldown = 0.25f;
+			
+			if (settings->debugLogging) {
+				float fallDistance = jumpStartZ - a_player->GetPosition().z;
+				logger::info("[FPCameraSettle] Action: Land (airTime={:.2f}s, fallDist={:.0f}, mult={:.2f}, wasJump={})", 
+					airTime, fallDistance, landingMult, didJump ? "yes" : "no");
+			}
+			
 			airTime = 0.0f;
-			if (settings->debugLogging) logger::info("[FPCameraSettle] Action: Land (airTime={:.2f})", airTime);
+			didJump = false;
 		}
 		wasInAir = isInAir;
 		
@@ -355,7 +462,8 @@ namespace CameraSettle
 			const auto& sprintSettings = settings->GetActionSettingsForState(ActionType::SprintForward, weaponDrawn);
 			ApplyImpulse(movementSpring, movementBlend, sprintSettings, globalMult, settings);
 			timeSinceAction = 0.0f;
-			idleNoiseAllowedAfterSprint = false;  // Block idle noise until EndAnimatedCameraDelta
+			idleNoiseAllowedAfterSprint = false;  // Block idle noise until sprint effects blend out
+			sprintStopTriggeredByAnim = false;    // Reset flag when starting new sprint (for rapid toggle)
 			if (settings->debugLogging) logger::info("[FPCameraSettle] Action: Sprint Start");
 		} else if (!isSprinting && wasSprinting) {
 			if (!sprintStopTriggeredByAnim) {
@@ -378,17 +486,73 @@ namespace CameraSettle
 		// OPTIMIZATION: Only check walk state when moving (avoid unnecessary function call)
 		bool isWalking = isMoving ? actorState->IsWalking() : wasWalking;
 		
-		// OPTIMIZATION: Only update blend when moving
+		// Get current movement speed for speed-based blending
+		auto* playerControls = RE::PlayerControls::GetSingleton();
+		float inputMagnitude = 0.0f;
+		if (playerControls) {
+			RE::NiPoint2 inputVec = playerControls->data.moveInputVec;
+			inputMagnitude = std::sqrt(inputVec.x * inputVec.x + inputVec.y * inputVec.y);
+		}
+		currentSpeed = inputMagnitude;
+		
+		// === SPEED-BASED WALK/RUN BLENDING ===
 		if (isMoving) {
 			constexpr float WALK_RUN_BLEND_SPEED = 5.0f;
-			float targetBlend = isWalking ? 0.0f : 1.0f;
+			float targetBlend;
+			
+			if (settings->speedBasedBlending) {
+				// Use input magnitude to determine blend
+				// Walk is typically 0.3-0.5, run is 0.7-1.0
+				// Blend smoothly between walk and run based on input magnitude
+				constexpr float WALK_THRESHOLD = 0.4f;
+				constexpr float RUN_THRESHOLD = 0.7f;
+				
+				if (inputMagnitude < WALK_THRESHOLD) {
+					targetBlend = 0.0f;  // Walk
+				} else if (inputMagnitude > RUN_THRESHOLD) {
+					targetBlend = 1.0f;  // Run
+				} else {
+					// Blend between walk and run
+					targetBlend = (inputMagnitude - WALK_THRESHOLD) / (RUN_THRESHOLD - WALK_THRESHOLD);
+				}
+				
+				// If player has walk toggle on, cap at walk
+				if (isWalking) {
+					targetBlend = std::min(targetBlend, 0.3f);
+				}
+			} else {
+				// Binary walk/run based on toggle
+				targetBlend = isWalking ? 0.0f : 1.0f;
+			}
 			
 			if (walkRunBlend < targetBlend) {
 				walkRunBlend = std::min(walkRunBlend + WALK_RUN_BLEND_SPEED * a_delta, targetBlend);
 			} else if (walkRunBlend > targetBlend) {
 				walkRunBlend = std::max(walkRunBlend - WALK_RUN_BLEND_SPEED * a_delta, targetBlend);
 			}
+			
+			// Update speed blend for grace period tracking
+			speedBlend = walkRunBlend;
 		}
+		
+		// === WALK-TO-RUN GRACE PERIOD ===
+		// Track when movement starts, block walk impulse if player accelerates quickly to run
+		if (isMoving && !wasMovingForGrace) {
+			// Just started moving
+			movementStartTime = 0.0f;
+			walkImpulseBlocked = false;
+		}
+		if (isMoving) {
+			movementStartTime += a_delta;
+			
+			// If within grace period and player is running/accelerating, block walk impulse
+			if (movementStartTime < settings->walkToRunGracePeriod && walkRunBlend > 0.5f) {
+				walkImpulseBlocked = true;
+			}
+		} else {
+			walkImpulseBlocked = false;
+		}
+		wasMovingForGrace = isMoving;
 		
 		// OPTIMIZATION: Cache blended settings - only recalculate when blend, weapon state, or settings change
 		// Only check settings version when edit mode is enabled (for performance)
@@ -421,6 +585,7 @@ namespace CameraSettle
 		}
 		
 		// Helper to get cached blended movement settings (no allocation)
+		// Sneak movements use their own settings (no walk/run blending for sneak)
 		auto getCachedBlendedSettings = [&](ActionType moveType) -> const ActionSettings& {
 			switch (moveType) {
 				case ActionType::WalkForward:
@@ -435,6 +600,16 @@ namespace CameraSettle
 				case ActionType::WalkRight:
 				case ActionType::RunRight:
 					return cachedBlendedWalkRun[3];
+				// Sneak movements - use directly, no walk/run blending
+				case ActionType::SneakWalkForward:
+				case ActionType::SneakWalkBackward:
+				case ActionType::SneakWalkLeft:
+				case ActionType::SneakWalkRight:
+				case ActionType::SneakRunForward:
+				case ActionType::SneakRunBackward:
+				case ActionType::SneakRunLeft:
+				case ActionType::SneakRunRight:
+					return settings->GetActionSettingsForState(moveType, weaponDrawn);
 				default:
 					return settings->GetActionSettingsForState(moveType, weaponDrawn);
 			}
@@ -452,18 +627,54 @@ namespace CameraSettle
 		
 		// Detect movement start
 		if (isMoving && !wasMoving && movementDebounce <= 0.0f) {
-			const ActionSettings& moveSettings = getCachedBlendedSettings(currentMovement);
-			ApplyImpulse(movementSpring, movementBlend, moveSettings, globalMult, settings);
-			timeSinceAction = 0.0f;
+			// Check if walk impulse should be blocked (grace period for accelerating to run)
+			// Only block if this is a walk-type movement and grace period is enabled
+			bool isWalkMovement = (currentMovement == ActionType::WalkForward || 
+			                       currentMovement == ActionType::WalkBackward ||
+			                       currentMovement == ActionType::WalkLeft || 
+			                       currentMovement == ActionType::WalkRight ||
+			                       currentMovement == ActionType::SneakWalkForward ||
+			                       currentMovement == ActionType::SneakWalkBackward ||
+			                       currentMovement == ActionType::SneakWalkLeft ||
+			                       currentMovement == ActionType::SneakWalkRight);
+			
+			// For walk movements with grace period, defer the impulse
+			// We'll apply the run impulse instead if player accelerates quickly
+			if (isWalkMovement && settings->walkToRunGracePeriod > 0.0f && settings->speedBasedBlending) {
+				// Don't apply impulse yet - wait for grace period
+				// The impulse will be applied after grace period if still walking
+				// Or the run impulse will apply when speed increases
+				if (settings->debugLogging) {
+					logger::info("[FPCameraSettle] Walk start - grace period active (waiting {:.2f}s)", settings->walkToRunGracePeriod);
+				}
+			} else {
+				// Normal case - apply impulse immediately
+				const ActionSettings& moveSettings = getCachedBlendedSettings(currentMovement);
+				ApplyImpulse(movementSpring, movementBlend, moveSettings, globalMult, settings);
+				timeSinceAction = 0.0f;
+				if (settings->debugLogging) logger::info("[FPCameraSettle] Action: {} Start (blend={:.2f}, weapon={})", Settings::GetActionName(currentMovement), walkRunBlend, weaponDrawn ? "drawn" : "sheathed");
+				if (settings->debugOnScreen) {
+					char buf[128];
+					snprintf(buf, sizeof(buf), "FPCam: %s [%s] mult=%.2f", 
+						Settings::GetActionName(currentMovement),
+						weaponDrawn ? "DRAWN" : "SHEATH",
+						globalMult);
+					RE::DebugNotification(buf);
+				}
+			}
 			movementDebounce = 0.15f;
-			if (settings->debugLogging) logger::info("[FPCameraSettle] Action: {} Start (blend={:.2f}, weapon={})", Settings::GetActionName(currentMovement), walkRunBlend, weaponDrawn ? "drawn" : "sheathed");
-			if (settings->debugOnScreen) {
-				char buf[128];
-				snprintf(buf, sizeof(buf), "FPCam: %s [%s] mult=%.2f", 
-					Settings::GetActionName(currentMovement),
-					weaponDrawn ? "DRAWN" : "SHEATH",
-					globalMult);
-				RE::DebugNotification(buf);
+		}
+		// Apply deferred walk impulse after grace period (if still walking)
+		else if (isMoving && wasMoving && movementStartTime >= settings->walkToRunGracePeriod && 
+		         movementStartTime < settings->walkToRunGracePeriod + a_delta * 2.0f && 
+		         !walkImpulseBlocked && settings->speedBasedBlending && movementDebounce <= 0.0f) {
+			// Grace period just ended and player is still walking - apply the walk impulse now
+			if (walkRunBlend < 0.5f) {
+				const ActionSettings& moveSettings = getCachedBlendedSettings(currentMovement);
+				ApplyImpulse(movementSpring, movementBlend, moveSettings, globalMult, settings);
+				timeSinceAction = 0.0f;
+				movementDebounce = 0.1f;
+				if (settings->debugLogging) logger::info("[FPCameraSettle] Action: {} Start (deferred after grace period)", Settings::GetActionName(currentMovement));
 			}
 		}
 		// Detect movement stop
@@ -485,18 +696,72 @@ namespace CameraSettle
 		}
 		// Detect movement direction change
 		else if (isMoving && currentMovement != currentMovementAction && currentMovementAction != ActionType::kTotal && movementDebounce <= 0.0f) {
-			const ActionSettings& moveSettings = getCachedBlendedSettings(currentMovement);
-			ApplyImpulse(movementSpring, movementBlend, moveSettings, globalMult * 0.5f, settings);
-			timeSinceAction = 0.0f;
-			movementDebounce = 0.1f;
-			if (settings->debugLogging) logger::info("[FPCameraSettle] Action: Direction Change to {} (weapon={})", Settings::GetActionName(currentMovement), weaponDrawn ? "drawn" : "sheathed");
-			if (settings->debugOnScreen) {
-				char buf[128];
-				snprintf(buf, sizeof(buf), "FPCam: -> %s [%s]", 
-					Settings::GetActionName(currentMovement),
-					weaponDrawn ? "DRAWN" : "SHEATH");
-				RE::DebugNotification(buf);
+			// Check if this is an opposite direction change (forward<->back, left<->right)
+			bool isOppositeDirection = AreOppositeDirections(currentMovement, currentMovementAction);
+			
+			if (isOppositeDirection) {
+				// === OPPOSITE DIRECTION HANDLING ===
+				// Instead of applying a full impulse (which fights with existing spring state),
+				// we dampen the current spring velocity and apply a reduced impulse.
+				// This creates a smooth "decelerate then accelerate" transition.
+				
+				// Dampen existing spring velocity to reduce fighting
+				// This smoothly cancels the momentum from the previous direction
+				float dampingFactor = 0.3f;  // Reduce velocity by 70%
+				movementSpring.positionVelocity.x *= dampingFactor;
+				movementSpring.positionVelocity.y *= dampingFactor;
+				movementSpring.positionVelocity.z *= dampingFactor;
+				movementSpring.rotationVelocity.x *= dampingFactor;
+				movementSpring.rotationVelocity.y *= dampingFactor;
+				movementSpring.rotationVelocity.z *= dampingFactor;
+				
+				// Cancel any pending blend from the previous direction
+				if (movementBlend.active) {
+					// Apply remaining blend at reduced strength instead of fighting
+					float remainingProgress = 1.0f - movementBlend.progress;
+					if (remainingProgress > 0.1f) {
+						// Only apply a small portion to avoid fighting
+						float reducedRemaining = remainingProgress * 0.2f;
+						movementSpring.positionVelocity.x += movementBlend.posImpulse.x * reducedRemaining;
+						movementSpring.positionVelocity.y += movementBlend.posImpulse.y * reducedRemaining;
+						movementSpring.positionVelocity.z += movementBlend.posImpulse.z * reducedRemaining;
+					}
+					movementBlend.Reset();
+				}
+				
+				// Apply the new direction's impulse at reduced strength
+				// The dampened velocity + reduced impulse = smooth transition
+				const ActionSettings& moveSettings = getCachedBlendedSettings(currentMovement);
+				ApplyImpulse(movementSpring, movementBlend, moveSettings, globalMult * 0.25f, settings);
+				
+				// Longer debounce for opposite directions to prevent rapid oscillation
+				movementDebounce = 0.15f;
+				
+				if (settings->debugLogging) {
+					logger::info("[FPCameraSettle] Action: Opposite Direction {} -> {} (dampened)", 
+						Settings::GetActionName(currentMovementAction), Settings::GetActionName(currentMovement));
+				}
+			} else {
+				// === NORMAL DIRECTION CHANGE (e.g., forward to left) ===
+				// These don't fight as much, apply normal impulse
+				const ActionSettings& moveSettings = getCachedBlendedSettings(currentMovement);
+				ApplyImpulse(movementSpring, movementBlend, moveSettings, globalMult * 0.5f, settings);
+				movementDebounce = 0.1f;
+				
+				if (settings->debugLogging) {
+					logger::info("[FPCameraSettle] Action: Direction Change to {} (weapon={})", 
+						Settings::GetActionName(currentMovement), weaponDrawn ? "drawn" : "sheathed");
+				}
+				if (settings->debugOnScreen) {
+					char buf[128];
+					snprintf(buf, sizeof(buf), "FPCam: -> %s [%s]", 
+						Settings::GetActionName(currentMovement),
+						weaponDrawn ? "DRAWN" : "SHEATH");
+					RE::DebugNotification(buf);
+				}
 			}
+			
+			timeSinceAction = 0.0f;
 		}
 		
 		wasMoving = isMoving;
@@ -595,8 +860,11 @@ namespace CameraSettle
 			if (settings->debugLogging) logger::info("[FPCameraSettle] Action: Arrow/Bolt Release (anim event)");
 		}
 		// Check for sprint stop animation event (EndAnimatedCameraDelta)
+		// Only trigger sprint stop if we were sprinting AND are no longer sprinting
+		// (EndAnimatedCameraDelta can fire during sprint when the initial tilt animation ends)
 		else if (a_event->tag == "EndAnimatedCameraDelta") {
-			if (wasSprinting) {
+			bool currentlySprinting = player->AsActorState() && player->AsActorState()->IsSprinting();
+			if (wasSprinting && !currentlySprinting) {
 				const auto& sprintSettings = settings->GetActionSettingsForState(ActionType::SprintForward, weaponDrawn);
 				ActionSettings reverseSettings = sprintSettings;
 				reverseSettings.impulseY = -reverseSettings.impulseY * 0.7f;
@@ -606,6 +874,10 @@ namespace CameraSettle
 				sprintStopTriggeredByAnim = true;
 				idleNoiseAllowedAfterSprint = true;  // Allow idle noise to blend in now
 				if (settings->debugLogging) logger::info("[FPCameraSettle] Action: Sprint Stop (anim event)");
+			} else if (wasSprinting && currentlySprinting) {
+				// Still sprinting - this is just the sprint start animation ending, allow idle noise
+				idleNoiseAllowedAfterSprint = true;
+				if (settings->debugLogging) logger::info("[FPCameraSettle] Sprint camera animation ended (still sprinting)");
 			}
 		}
 		
@@ -756,71 +1028,91 @@ namespace CameraSettle
 		UpdateSpring(archerySpring, settings->GetActionSettingsForState(ActionType::ArrowRelease, weaponDrawn), a_delta, settings);
 		
 		// === UPDATE IDLE CAMERA NOISE ===
+		// This is truly additive: phase always advances, amplitude ramps smoothly
+		// No lerping toward a target - noise is calculated directly from phase * amplitude
 		{
-			// Check if we're truly idle
+			// Check if player is in a state where idle noise should play
+			// IMPORTANT: We do NOT require springs to be inactive!
+			// The noise is truly additive, so it layers on top of settling springs smoothly.
+			// This prevents the "snap" that occurred when waiting for springs to finish.
 			auto* playerState = player->AsActorState();
-			
-			bool hasActiveActions = movementSpring.IsActive() || jumpSpring.IsActive() || 
-			                        sneakSpring.IsActive() || hitSpring.IsActive() || archerySpring.IsActive();
-			bool hasPendingBlends = movementBlend.active || jumpBlend.active || 
-			                        sneakBlend.active || hitBlend.active || archeryBlend.active;
 			
 			bool isGrounded = !wasInAir && !player->IsInMidair();
 			bool isStandingStill = !wasMoving && !playerState->IsSprinting();
-			bool isNotInAction = !playerState->IsSneaking() && !playerState->IsSwimming() && 
-			                     !hasActiveActions && !hasPendingBlends;
+			bool isNotInActiveAction = !playerState->IsSneaking() && !playerState->IsSwimming();
+			
+			// Check if in dialogue or map menu (both should disable idle noise if setting enabled)
+			bool isInDialogue = ui && ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME);
+			bool isInMapMenu = ui && ui->IsMenuOpen(RE::MapMenu::MENU_NAME);
 			
 			// Idle noise can only start after sprint if EndAnimatedCameraDelta has fired
-			bool isIdle = isGrounded && isStandingStill && isNotInAction && idleNoiseAllowedAfterSprint;
+			// Also disable if in dialogue/map and setting is enabled
+			bool dialogueBlocksNoise = settings->dialogueDisableIdleNoise && (isInDialogue || isInMapMenu);
+			
+			// Player is "idle enough" for noise when standing still and grounded
+			// Springs can still be settling - the noise is additive and will layer smoothly
+			bool shouldPlayIdleNoise = isGrounded && isStandingStill && isNotInActiveAction && 
+			                           idleNoiseAllowedAfterSprint && !dialogueBlocksNoise;
 			bool noiseEnabled = weaponDrawn ? settings->idleNoiseEnabledDrawn : settings->idleNoiseEnabledSheathed;
 			
-			// Calculate target noise values (what we want to blend toward)
-			RE::NiPoint3 targetPosNoise = { 0.0f, 0.0f, 0.0f };
-			RE::NiPoint3 targetRotNoise = { 0.0f, 0.0f, 0.0f };
+			// Log dialogue/map state transitions for debugging
+			bool inBlockingMenu = isInDialogue || isInMapMenu;
+			if (settings->debugLogging && inBlockingMenu != wasInDialogue) {
+				const char* menuName = isInDialogue ? "Dialogue" : (isInMapMenu ? "Map" : "Menu");
+				logger::info("[FPCameraSettle] {} menu: {} (noise {})", 
+					menuName,
+					inBlockingMenu ? "ENTERED" : "EXITED",
+					dialogueBlocksNoise ? "blocked" : "allowed");
+			}
+			wasInDialogue = inBlockingMenu;
 			
-			if (isIdle && noiseEnabled) {
-				// Calculate full noise values
-				float freq = weaponDrawn ? settings->idleNoiseFrequencyDrawn : settings->idleNoiseFrequencySheathed;
-				idleNoiseTime += a_delta * freq * 2.0f * PI;
-				
-				float sin1 = std::sin(idleNoiseTime);
-				float sin2 = std::sin(idleNoiseTime * 1.37f + 1.2f);
-				float sin3 = std::sin(idleNoiseTime * 0.73f + 2.5f);
-				
-				float posX = weaponDrawn ? settings->idleNoisePosAmpXDrawn : settings->idleNoisePosAmpXSheathed;
-				float posY = weaponDrawn ? settings->idleNoisePosAmpYDrawn : settings->idleNoisePosAmpYSheathed;
-				float posZ = weaponDrawn ? settings->idleNoisePosAmpZDrawn : settings->idleNoisePosAmpZSheathed;
-				
-				targetPosNoise.x = sin1 * posX;
-				targetPosNoise.y = sin2 * posY;
-				targetPosNoise.z = sin3 * posZ;
-				
-				float rotX = weaponDrawn ? settings->idleNoiseRotAmpXDrawn : settings->idleNoiseRotAmpXSheathed;
-				float rotY = weaponDrawn ? settings->idleNoiseRotAmpYDrawn : settings->idleNoiseRotAmpYSheathed;
-				float rotZ = weaponDrawn ? settings->idleNoiseRotAmpZDrawn : settings->idleNoiseRotAmpZSheathed;
-				
-				targetRotNoise.x = sin3 * rotX * DEG_TO_RAD;
-				targetRotNoise.y = sin1 * rotY * DEG_TO_RAD;
-				targetRotNoise.z = sin2 * rotZ * DEG_TO_RAD;
-			} else {
-				// Not idle - target is zero, reset noise time
-				idleNoiseTime = 0.0f;
+			// Get frequency for phase advancement
+			float freq = weaponDrawn ? settings->idleNoiseFrequencyDrawn : settings->idleNoiseFrequencySheathed;
+			
+			// ALWAYS advance phase - the wave is always "there", just with zero amplitude when not idle
+			// This ensures smooth continuity when amplitude ramps up/down
+			idleNoisePhase += a_delta * freq * 2.0f * PI;
+			
+			// Keep phase bounded to avoid float precision issues over long play sessions
+			if (idleNoisePhase > 1000.0f * PI) {
+				idleNoisePhase = std::fmod(idleNoisePhase, 2.0f * PI);
 			}
 			
-			// Always lerp toward target with configurable blend time
-			// blend factor = 1 - e^(-t/tau) approximated as min(1, speed * dt)
-			// For T seconds to reach ~95%, speed = 3/T
-			float blendTime = std::max(0.05f, settings->idleNoiseBlendTime);
-			float blendSpeed = 3.0f / blendTime;
-			float blendFactor = std::min(1.0f, blendSpeed * a_delta);
+			// Smoothly ramp amplitude up/down based on idle state
+			// This is the key to truly additive noise - only amplitude changes, not the wave itself
+			float targetAmplitude = (shouldPlayIdleNoise && noiseEnabled) ? 1.0f : 0.0f;
+			float rampSpeed = 3.0f / std::max(0.05f, settings->idleNoiseBlendTime);  // Match blend time
 			
-			idleNoiseOffset.x += (targetPosNoise.x - idleNoiseOffset.x) * blendFactor;
-			idleNoiseOffset.y += (targetPosNoise.y - idleNoiseOffset.y) * blendFactor;
-			idleNoiseOffset.z += (targetPosNoise.z - idleNoiseOffset.z) * blendFactor;
+			if (idleNoiseAmplitude < targetAmplitude) {
+				idleNoiseAmplitude = std::min(idleNoiseAmplitude + rampSpeed * a_delta, targetAmplitude);
+			} else if (idleNoiseAmplitude > targetAmplitude) {
+				idleNoiseAmplitude = std::max(idleNoiseAmplitude - rampSpeed * a_delta, targetAmplitude);
+			}
 			
-			idleNoiseRotation.x += (targetRotNoise.x - idleNoiseRotation.x) * blendFactor;
-			idleNoiseRotation.y += (targetRotNoise.y - idleNoiseRotation.y) * blendFactor;
-			idleNoiseRotation.z += (targetRotNoise.z - idleNoiseRotation.z) * blendFactor;
+			// Calculate sine waves from continuous phase
+			float sin1 = std::sin(idleNoisePhase);
+			float sin2 = std::sin(idleNoisePhase * 1.37f + 1.2f);
+			float sin3 = std::sin(idleNoisePhase * 0.73f + 2.5f);
+			
+			// Get amplitude settings
+			float posX = weaponDrawn ? settings->idleNoisePosAmpXDrawn : settings->idleNoisePosAmpXSheathed;
+			float posY = weaponDrawn ? settings->idleNoisePosAmpYDrawn : settings->idleNoisePosAmpYSheathed;
+			float posZ = weaponDrawn ? settings->idleNoisePosAmpZDrawn : settings->idleNoisePosAmpZSheathed;
+			
+			float rotX = weaponDrawn ? settings->idleNoiseRotAmpXDrawn : settings->idleNoiseRotAmpXSheathed;
+			float rotY = weaponDrawn ? settings->idleNoiseRotAmpYDrawn : settings->idleNoiseRotAmpYSheathed;
+			float rotZ = weaponDrawn ? settings->idleNoiseRotAmpZDrawn : settings->idleNoiseRotAmpZSheathed;
+			
+			// Calculate noise DIRECTLY - no lerping toward a target!
+			// The amplitude smoothly ramps, so the noise smoothly appears/disappears
+			// This is truly additive: sine_value * max_amplitude * current_amplitude_factor
+			idleNoiseOffset.x = sin1 * posX * idleNoiseAmplitude;
+			idleNoiseOffset.y = sin2 * posY * idleNoiseAmplitude;
+			idleNoiseOffset.z = sin3 * posZ * idleNoiseAmplitude;
+			
+			idleNoiseRotation.x = sin3 * rotX * DEG_TO_RAD * idleNoiseAmplitude;
+			idleNoiseRotation.y = sin1 * rotY * DEG_TO_RAD * idleNoiseAmplitude;
+			idleNoiseRotation.z = sin2 * rotZ * DEG_TO_RAD * idleNoiseAmplitude;
 		}
 		
 		// === UPDATE SPRINT EFFECTS (FOV + BLUR) ===
@@ -835,6 +1127,8 @@ namespace CameraSettle
 				// Only check actual sprint state when we need to (effects enabled or blending out)
 				auto* playerState = player->AsActorState();
 				bool actuallySprintingNow = playerState && playerState->IsSprinting() && !player->IsInMidair();
+				
+				// Sprint effects deactivate when EndAnimatedCameraDelta fires AND player stopped sprinting
 				bool isSprinting = actuallySprintingNow && !sprintStopTriggeredByAnim;
 			
 			// Calculate target FOV offset
@@ -1012,20 +1306,21 @@ namespace CameraSettle
 		}
 		
 		// Apply FOV offset (for sprint effect)
-		// Capture base FOV on first use
-		if (!fovCaptured && isInFirstPerson) {
-			baseFov = a_camera->worldFOV;
-			fovCaptured = true;
-		}
-		
-		if (fovCaptured) {
-			// Snap very small offsets to zero to complete the blend
-			if (std::abs(currentFovOffset) < 0.001f) {
-				currentFovOffset = 0.0f;
+		// Only modify FOV when we have an active offset
+		if (std::abs(currentFovOffset) > 0.01f) {
+			// Active FOV offset - capture base FOV if not already captured
+			if (!fovCaptured) {
+				baseFov = a_camera->worldFOV;
+				fovCaptured = true;
 			}
 			
-			// Always apply FOV from base + offset to ensure smooth transitions
+			// Apply offset on top of captured base FOV
 			a_camera->worldFOV = baseFov + currentFovOffset;
+		} else if (fovCaptured) {
+			// Offset has returned to ~0, restore base FOV one last time and stop modifying
+			a_camera->worldFOV = baseFov;
+			currentFovOffset = 0.0f;
+			fovCaptured = false;  // Re-capture next time we have an offset
 		}
 		
 		// Update node with dirty flag (like ImprovedCameraSE's Helper::UpdateNode)
@@ -1068,6 +1363,17 @@ namespace CameraSettle
 		sprintStopTriggeredByAnim = false;
 		idleNoiseAllowedAfterSprint = true;
 		
+		// Reset speed-based blending state
+		currentSpeed = 0.0f;
+		speedBlend = 0.0f;
+		movementStartTime = 0.0f;
+		wasMovingForGrace = false;
+		walkImpulseBlocked = false;
+		
+		// Reset jump detection state
+		didJump = false;
+		jumpStartZ = 0.0f;
+		
 		// Reset performance caches
 		cachedNiCamera = nullptr;
 		cachedCameraNode = nullptr;
@@ -1076,9 +1382,12 @@ namespace CameraSettle
 		hotReloadTimer = 0.0f;
 		
 		// Reset idle noise state
-		idleNoiseTime = 0.0f;
+		// Note: We don't reset idleNoisePhase - it continues smoothly
+		// Only reset the amplitude so noise fades out naturally
+		idleNoiseAmplitude = 0.0f;
 		idleNoiseOffset = { 0.0f, 0.0f, 0.0f };
 		idleNoiseRotation = { 0.0f, 0.0f, 0.0f };
+		wasInDialogue = false;
 		
 		// Reset sprint effects state - restore FOV before resetting
 		if (fovCaptured) {

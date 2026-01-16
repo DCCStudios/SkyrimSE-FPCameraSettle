@@ -15,6 +15,14 @@ namespace
 		"RunLeft",
 		"RunRight",
 		"SprintForward",
+		"SneakWalkForward",
+		"SneakWalkBackward",
+		"SneakWalkLeft",
+		"SneakWalkRight",
+		"SneakRunForward",
+		"SneakRunBackward",
+		"SneakRunLeft",
+		"SneakRunRight",
 		"Jump",
 		"Land",
 		"Sneak",
@@ -264,6 +272,52 @@ void Settings::InitializeDefaults()
 	arrowReleaseDrawn.rotImpulseY = 0.0f;
 	arrowReleaseDrawn.rotImpulseZ = 0.0f;
 	
+	// Sneak walk actions - even more subtle than normal walk
+	auto initSneakWalk = [](ActionSettings& s, float xDir, float yDir) {
+		s.enabled = true;
+		s.multiplier = 1.0f;
+		s.blendTime = 0.15f;  // Slower blend for stealth
+		s.stiffness = 60.0f;
+		s.damping = 7.0f;
+		s.positionStrength = 1.5f;
+		s.rotationStrength = 1.0f;
+		s.impulseX = xDir * 2.0f;
+		s.impulseY = yDir * 1.5f;
+		s.impulseZ = 0.3f;
+		s.rotImpulseX = yDir * 0.3f;
+		s.rotImpulseY = xDir * 0.2f;
+		s.rotImpulseZ = xDir * 0.5f;
+	};
+	
+	// Sneak run actions - between walk and normal run
+	auto initSneakRun = [](ActionSettings& s, float xDir, float yDir) {
+		s.enabled = true;
+		s.multiplier = 1.0f;
+		s.blendTime = 0.1f;
+		s.stiffness = 70.0f;
+		s.damping = 6.5f;
+		s.positionStrength = 2.5f;
+		s.rotationStrength = 1.8f;
+		s.impulseX = xDir * 3.5f;
+		s.impulseY = yDir * 2.5f;
+		s.impulseZ = 0.7f;
+		s.rotImpulseX = yDir * 0.7f;
+		s.rotImpulseY = xDir * 0.4f;
+		s.rotImpulseZ = xDir * 1.0f;
+	};
+	
+	// Initialize sneak walk settings (drawn)
+	initSneakWalk(sneakWalkForwardDrawn, 0.0f, 1.0f);
+	initSneakWalk(sneakWalkBackwardDrawn, 0.0f, -1.0f);
+	initSneakWalk(sneakWalkLeftDrawn, -1.0f, 0.0f);
+	initSneakWalk(sneakWalkRightDrawn, 1.0f, 0.0f);
+	
+	// Initialize sneak run settings (drawn)
+	initSneakRun(sneakRunForwardDrawn, 0.0f, 1.0f);
+	initSneakRun(sneakRunBackwardDrawn, 0.0f, -1.0f);
+	initSneakRun(sneakRunLeftDrawn, -1.0f, 0.0f);
+	initSneakRun(sneakRunRightDrawn, 1.0f, 0.0f);
+	
 	// Initialize sheathed versions (same as drawn but will be scaled by weaponSheathedMult)
 	walkForwardSheathed = walkForwardDrawn;
 	walkBackwardSheathed = walkBackwardDrawn;
@@ -274,6 +328,14 @@ void Settings::InitializeDefaults()
 	runLeftSheathed = runLeftDrawn;
 	runRightSheathed = runRightDrawn;
 	sprintForwardSheathed = sprintForwardDrawn;
+	sneakWalkForwardSheathed = sneakWalkForwardDrawn;
+	sneakWalkBackwardSheathed = sneakWalkBackwardDrawn;
+	sneakWalkLeftSheathed = sneakWalkLeftDrawn;
+	sneakWalkRightSheathed = sneakWalkRightDrawn;
+	sneakRunForwardSheathed = sneakRunForwardDrawn;
+	sneakRunBackwardSheathed = sneakRunBackwardDrawn;
+	sneakRunLeftSheathed = sneakRunLeftDrawn;
+	sneakRunRightSheathed = sneakRunRightDrawn;
 	jumpSheathed = jumpDrawn;
 	landSheathed = landDrawn;
 	sneakSheathed = sneakDrawn;
@@ -305,6 +367,17 @@ void Settings::Load()
 	resetOnPause = ini.GetBoolValue("General", "bResetOnPause", resetOnPause);
 	springSubsteps = static_cast<int>(ini.GetLongValue("General", "iSpringSubsteps", springSubsteps));
 	springSubsteps = std::clamp(springSubsteps, 1, 8);
+	
+	// Load walk/run blending settings
+	speedBasedBlending = ini.GetBoolValue("Movement", "bSpeedBasedBlending", speedBasedBlending);
+	walkToRunGracePeriod = static_cast<float>(ini.GetDoubleValue("Movement", "fWalkToRunGracePeriod", walkToRunGracePeriod));
+	
+	// Load jump/land scaling settings
+	scaleJumpByAirTime = ini.GetBoolValue("Jump", "bScaleByAirTime", scaleJumpByAirTime);
+	jumpMinAirTime = static_cast<float>(ini.GetDoubleValue("Jump", "fMinAirTime", jumpMinAirTime));
+	jumpMaxAirTimeScale = static_cast<float>(ini.GetDoubleValue("Jump", "fMaxAirTimeScale", jumpMaxAirTimeScale));
+	landBaseScale = static_cast<float>(ini.GetDoubleValue("Jump", "fLandBaseScale", landBaseScale));
+	landAirTimeScale = static_cast<float>(ini.GetDoubleValue("Jump", "fLandAirTimeScale", landAirTimeScale));
 	
 	// Load weapon state settings
 	weaponDrawnEnabled = ini.GetBoolValue("WeaponState", "bWeaponDrawnEnabled", weaponDrawnEnabled);
@@ -339,6 +412,7 @@ void Settings::Load()
 	
 	// Load shared idle noise settings
 	idleNoiseBlendTime = static_cast<float>(ini.GetDoubleValue("IdleNoise", "fBlendTime", idleNoiseBlendTime));
+	dialogueDisableIdleNoise = ini.GetBoolValue("IdleNoise", "bDialogueDisableIdleNoise", dialogueDisableIdleNoise);
 	
 	// Load sprint effects settings
 	sprintFovEnabled = ini.GetBoolValue("SprintEffects", "bFovEnabled", sprintFovEnabled);
@@ -374,6 +448,14 @@ void Settings::Load()
 	takingHitDrawn.Load(ini, "TakingHit_Drawn");
 	hittingDrawn.Load(ini, "Hitting_Drawn");
 	arrowReleaseDrawn.Load(ini, "ArrowRelease_Drawn");
+	sneakWalkForwardDrawn.Load(ini, "SneakWalkForward_Drawn");
+	sneakWalkBackwardDrawn.Load(ini, "SneakWalkBackward_Drawn");
+	sneakWalkLeftDrawn.Load(ini, "SneakWalkLeft_Drawn");
+	sneakWalkRightDrawn.Load(ini, "SneakWalkRight_Drawn");
+	sneakRunForwardDrawn.Load(ini, "SneakRunForward_Drawn");
+	sneakRunBackwardDrawn.Load(ini, "SneakRunBackward_Drawn");
+	sneakRunLeftDrawn.Load(ini, "SneakRunLeft_Drawn");
+	sneakRunRightDrawn.Load(ini, "SneakRunRight_Drawn");
 	
 	// Load per-action settings (weapon sheathed)
 	walkForwardSheathed.Load(ini, "WalkForward_Sheathed");
@@ -392,6 +474,14 @@ void Settings::Load()
 	takingHitSheathed.Load(ini, "TakingHit_Sheathed");
 	hittingSheathed.Load(ini, "Hitting_Sheathed");
 	arrowReleaseSheathed.Load(ini, "ArrowRelease_Sheathed");
+	sneakWalkForwardSheathed.Load(ini, "SneakWalkForward_Sheathed");
+	sneakWalkBackwardSheathed.Load(ini, "SneakWalkBackward_Sheathed");
+	sneakWalkLeftSheathed.Load(ini, "SneakWalkLeft_Sheathed");
+	sneakWalkRightSheathed.Load(ini, "SneakWalkRight_Sheathed");
+	sneakRunForwardSheathed.Load(ini, "SneakRunForward_Sheathed");
+	sneakRunBackwardSheathed.Load(ini, "SneakRunBackward_Sheathed");
+	sneakRunLeftSheathed.Load(ini, "SneakRunLeft_Sheathed");
+	sneakRunRightSheathed.Load(ini, "SneakRunRight_Sheathed");
 	
 	// Track file modification time
 	try {
@@ -417,6 +507,17 @@ void Settings::Save()
 	ini.SetDoubleValue("General", "fSmoothingFactor", smoothingFactor, "; Input smoothing (0 = none, 1 = maximum)");
 	ini.SetBoolValue("General", "bResetOnPause", resetOnPause, "; Disable camera effects when game is paused (menus, console, etc.)");
 	ini.SetLongValue("General", "iSpringSubsteps", springSubsteps, "; Number of physics sub-steps per frame (1-8, higher = more stable but slower)");
+	
+	// Movement settings
+	ini.SetBoolValue("Movement", "bSpeedBasedBlending", speedBasedBlending, "; Blend walk/run impulse based on actual speed instead of binary toggle");
+	ini.SetDoubleValue("Movement", "fWalkToRunGracePeriod", walkToRunGracePeriod, "; Skip walk impulse if player reaches run speed within this time (seconds)");
+	
+	// Jump/land scaling settings
+	ini.SetBoolValue("Jump", "bScaleByAirTime", scaleJumpByAirTime, "; Scale landing impulse based on air time (also prevents jump impulse when walking off ledges)");
+	ini.SetDoubleValue("Jump", "fMinAirTime", jumpMinAirTime, "; Minimum air time to trigger landing impulse (ignores short drops)");
+	ini.SetDoubleValue("Jump", "fMaxAirTimeScale", jumpMaxAirTimeScale, "; Air time above this is capped for scaling purposes");
+	ini.SetDoubleValue("Jump", "fLandBaseScale", landBaseScale, "; Base landing impulse scale (always applied above min air time)");
+	ini.SetDoubleValue("Jump", "fLandAirTimeScale", landAirTimeScale, "; Additional scale from air time (0 to this based on air time)");
 	
 	// Weapon state settings
 	ini.SetBoolValue("WeaponState", "bWeaponDrawnEnabled", weaponDrawnEnabled, "; Enable effects when weapon is drawn");
@@ -451,6 +552,7 @@ void Settings::Save()
 	
 	// Shared idle noise settings
 	ini.SetDoubleValue("IdleNoise", "fBlendTime", idleNoiseBlendTime, "; Blend in/out time in seconds");
+	ini.SetBoolValue("IdleNoise", "bDialogueDisableIdleNoise", dialogueDisableIdleNoise, "; Disable idle camera noise in dialogue and map menus (blends out smoothly)");
 	
 	// Sprint effects
 	ini.SetBoolValue("SprintEffects", "bFovEnabled", sprintFovEnabled, "; Enable FOV increase when sprinting");
@@ -486,6 +588,14 @@ void Settings::Save()
 	takingHitDrawn.Save(ini, "TakingHit_Drawn");
 	hittingDrawn.Save(ini, "Hitting_Drawn");
 	arrowReleaseDrawn.Save(ini, "ArrowRelease_Drawn");
+	sneakWalkForwardDrawn.Save(ini, "SneakWalkForward_Drawn");
+	sneakWalkBackwardDrawn.Save(ini, "SneakWalkBackward_Drawn");
+	sneakWalkLeftDrawn.Save(ini, "SneakWalkLeft_Drawn");
+	sneakWalkRightDrawn.Save(ini, "SneakWalkRight_Drawn");
+	sneakRunForwardDrawn.Save(ini, "SneakRunForward_Drawn");
+	sneakRunBackwardDrawn.Save(ini, "SneakRunBackward_Drawn");
+	sneakRunLeftDrawn.Save(ini, "SneakRunLeft_Drawn");
+	sneakRunRightDrawn.Save(ini, "SneakRunRight_Drawn");
 	
 	// Per-action settings (weapon sheathed)
 	walkForwardSheathed.Save(ini, "WalkForward_Sheathed");
@@ -504,6 +614,14 @@ void Settings::Save()
 	takingHitSheathed.Save(ini, "TakingHit_Sheathed");
 	hittingSheathed.Save(ini, "Hitting_Sheathed");
 	arrowReleaseSheathed.Save(ini, "ArrowRelease_Sheathed");
+	sneakWalkForwardSheathed.Save(ini, "SneakWalkForward_Sheathed");
+	sneakWalkBackwardSheathed.Save(ini, "SneakWalkBackward_Sheathed");
+	sneakWalkLeftSheathed.Save(ini, "SneakWalkLeft_Sheathed");
+	sneakWalkRightSheathed.Save(ini, "SneakWalkRight_Sheathed");
+	sneakRunForwardSheathed.Save(ini, "SneakRunForward_Sheathed");
+	sneakRunBackwardSheathed.Save(ini, "SneakRunBackward_Sheathed");
+	sneakRunLeftSheathed.Save(ini, "SneakRunLeft_Sheathed");
+	sneakRunRightSheathed.Save(ini, "SneakRunRight_Sheathed");
 	
 	SI_Error rc = ini.SaveFile(INI_PATH);
 	if (rc < 0) {
@@ -561,6 +679,14 @@ ActionSettings& Settings::GetActionSettingsForState(ActionType a_type, bool a_we
 		case ActionType::RunLeft: return runLeftDrawn;
 		case ActionType::RunRight: return runRightDrawn;
 		case ActionType::SprintForward: return sprintForwardDrawn;
+		case ActionType::SneakWalkForward: return sneakWalkForwardDrawn;
+		case ActionType::SneakWalkBackward: return sneakWalkBackwardDrawn;
+		case ActionType::SneakWalkLeft: return sneakWalkLeftDrawn;
+		case ActionType::SneakWalkRight: return sneakWalkRightDrawn;
+		case ActionType::SneakRunForward: return sneakRunForwardDrawn;
+		case ActionType::SneakRunBackward: return sneakRunBackwardDrawn;
+		case ActionType::SneakRunLeft: return sneakRunLeftDrawn;
+		case ActionType::SneakRunRight: return sneakRunRightDrawn;
 		case ActionType::Jump: return jumpDrawn;
 		case ActionType::Land: return landDrawn;
 		case ActionType::Sneak: return sneakDrawn;
@@ -581,6 +707,14 @@ ActionSettings& Settings::GetActionSettingsForState(ActionType a_type, bool a_we
 		case ActionType::RunLeft: return runLeftSheathed;
 		case ActionType::RunRight: return runRightSheathed;
 		case ActionType::SprintForward: return sprintForwardSheathed;
+		case ActionType::SneakWalkForward: return sneakWalkForwardSheathed;
+		case ActionType::SneakWalkBackward: return sneakWalkBackwardSheathed;
+		case ActionType::SneakWalkLeft: return sneakWalkLeftSheathed;
+		case ActionType::SneakWalkRight: return sneakWalkRightSheathed;
+		case ActionType::SneakRunForward: return sneakRunForwardSheathed;
+		case ActionType::SneakRunBackward: return sneakRunBackwardSheathed;
+		case ActionType::SneakRunLeft: return sneakRunLeftSheathed;
+		case ActionType::SneakRunRight: return sneakRunRightSheathed;
 		case ActionType::Jump: return jumpSheathed;
 		case ActionType::Land: return landSheathed;
 		case ActionType::Sneak: return sneakSheathed;
