@@ -65,6 +65,7 @@ namespace Menu
 		DrawSettlingSettings();
 		DrawIdleNoiseSettings();
 		DrawSprintEffectsSettings();
+		DrawFovPunchSettings();
 		DrawDebugSettings();
 		
 		ImGui::Separator();
@@ -568,6 +569,61 @@ namespace Menu
 			ImGui::EndDisabled();
 		} else {
 			State::sprintEffectsExpanded = false;
+		}
+	}
+
+	void DrawFovPunchSettings()
+	{
+		auto* settings = Settings::GetSingleton();
+		
+		if (ImGui::CollapsingHeader("FOV Punch", State::fovPunchExpanded ? ImGuiTreeNodeFlags_DefaultOpen : 0)) {
+			State::fovPunchExpanded = true;
+			
+			ImGui::TextWrapped("Quick FOV punch that dips in, overshoots, then returns to normal.");
+			ImGui::Spacing();
+			
+			ImGui::BeginDisabled(!State::editMode);
+			
+			if (SliderFloatWithTooltip("Punch Duration", &settings->fovPunchDuration, 0.05f, 1.0f, "%.2f sec",
+				"Total time for the full punch (in, overshoot, return).")) {
+				MarkSettingsChanged();
+			}
+			
+			ImGui::Spacing();
+			ImGui::Separator();
+			ImGui::Text("On Taking Hit:");
+			
+			if (CheckboxWithTooltip("Enable Hit Punch", &settings->fovPunchHitEnabled,
+				"Apply a quick FOV punch when the player takes a hit (excludes damage over time).")) {
+				MarkSettingsChanged();
+			}
+			
+			if (settings->fovPunchHitEnabled) {
+				if (SliderFloatWithTooltip("Hit Strength", &settings->fovPunchHitStrength, 0.0f, 15.0f, "%.1f%%",
+					"Percent of current FOV to punch in/out.\nExample: 5.0 = -5% then +5%.")) {
+					MarkSettingsChanged();
+				}
+			}
+			
+			ImGui::Spacing();
+			ImGui::Separator();
+			ImGui::Text("On Arrow/Bolt Release:");
+			
+			if (CheckboxWithTooltip("Enable Arrow Punch", &settings->fovPunchArrowEnabled,
+				"Apply a quick FOV punch when firing a bow or crossbow.")) {
+				MarkSettingsChanged();
+			}
+			
+			if (settings->fovPunchArrowEnabled) {
+				if (SliderFloatWithTooltip("Arrow Strength", &settings->fovPunchArrowStrength, 0.0f, 15.0f, "%.1f%%",
+					"Percent of current FOV to punch in/out.\nExample: 3.0 = -3% then +3%.")) {
+					MarkSettingsChanged();
+				}
+			}
+			
+			ImGui::EndDisabled();
+		} else {
+			State::fovPunchExpanded = false;
 		}
 	}
 	

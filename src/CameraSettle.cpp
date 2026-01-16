@@ -26,6 +26,12 @@ namespace CameraSettle
 				a_from.z + (a_to.z - a_from.z) * a_t
 			};
 		}
+
+		float SmoothStep(float a_t)
+		{
+			a_t = std::clamp(a_t, 0.0f, 1.0f);
+			return a_t * a_t * (3.0f - 2.0f * a_t);
+		}
 		
 		// Create rotation matrix from euler angles (pitch, yaw, roll order)
 		RE::NiMatrix3 EulerToMatrix(float a_pitch, float a_yaw, float a_roll)
@@ -174,6 +180,25 @@ namespace CameraSettle
 			a_state.rotationVelocity.y += a_blend.rotImpulse.y * deltaProgress;
 			a_state.rotationVelocity.z += a_blend.rotImpulse.z * deltaProgress;
 		}
+	}
+
+	void CameraSettleManager::StartFovPunch(float a_strengthPercent)
+	{
+		auto* settings = Settings::GetSingleton();
+		if (!settings || a_strengthPercent <= 0.0f) {
+			return;
+		}
+		
+		auto* camera = RE::PlayerCamera::GetSingleton();
+		if (!camera) {
+			return;
+		}
+		
+		fovPunchActive = true;
+		fovPunchTimer = 0.0f;
+		fovPunchDuration = std::max(settings->fovPunchDuration, 0.05f);
+		fovPunchStrength = std::clamp(a_strengthPercent / 100.0f, 0.0f, 0.5f);
+		fovPunchValue = 0.0f;
 	}
 	
 	void CameraSettleManager::UpdateSpring(SpringState& a_state, const ActionSettings& a_settings, float a_delta, Settings* a_globalSettings)
@@ -814,8 +839,52 @@ namespace CameraSettle
 		bool playerHitting = (a_event->cause.get() == player);
 		
 		if (playerHit) {
+			// Confirm this was an actual hit (not a miss) using lastHitData
+			bool confirmedHit = false;
+			float hitScale = 1.0f;
+			if (auto* process = player->GetActorRuntimeData().currentProcess) {
+				if (process->middleHigh && process->middleHigh->lastHitData) {
+					auto* hitData = process->middleHigh->lastHitData;
+					auto hitTargetPtr = hitData->target.get();
+					auto hitAggressorPtr = hitData->aggressor.get();
+					RE::Actor* hitTarget = hitTargetPtr.get();
+					RE::Actor* hitAggressor = hitAggressorPtr.get();
+					
+					RE::Actor* causeActor = nullptr;
+					if (auto* causeRef = a_event->cause.get()) {
+						causeActor = causeRef->As<RE::Actor>();
+					}
+					
+					bool targetMatches = (hitTarget == player);
+					bool aggressorMatches = (!causeActor || hitAggressor == causeActor);
+					bool hasAttackInfo =
+						hitData->weapon != nullptr ||
+						hitData->attackDataSpell != nullptr ||
+						hitData->flags.any(RE::HitData::Flag::kMeleeAttack) ||
+						hitData->flags.any(RE::HitData::Flag::kBash) ||
+						hitData->flags.any(RE::HitData::Flag::kPowerAttack) ||
+						hitData->flags.any(RE::HitData::Flag::kExplosion) ||
+						a_event->source != 0 ||
+						a_event->projectile != 0;
+					
+					confirmedHit = targetMatches && aggressorMatches && hasAttackInfo;
+					bool blocked = hitData->flags.any(RE::HitData::Flag::kBlocked) ||
+					               a_event->flags.any(RE::TESHitEvent::Flag::kHitBlocked);
+					if (confirmedHit && blocked) {
+						hitScale = 0.5f;
+					}
+				}
+			}
+			
+			if (!confirmedHit) {
+				return RE::BSEventNotifyControl::kContinue;
+			}
+			
 			const auto& hitSettings = settings->GetActionSettingsForState(ActionType::TakingHit, weaponDrawn);
-			ApplyImpulse(hitSpring, hitBlend, hitSettings, globalMult, settings);
+			ApplyImpulse(hitSpring, hitBlend, hitSettings, globalMult * hitScale, settings);
+			if (settings->fovPunchHitEnabled) {
+				StartFovPunch(settings->fovPunchHitStrength);
+			}
 			hitCooldown = 0.15f;  // Slightly longer cooldown to prevent rapid re-triggers
 			timeSinceAction = 0.0f;
 			if (settings->debugLogging) logger::info("[FPCameraSettle] Action: Taking Hit (source: {:X})", 
@@ -856,6 +925,9 @@ namespace CameraSettle
 		if (a_event->tag == "arrowRelease" || a_event->tag == "BoltRelease") {
 			const auto& arrowSettings = settings->GetActionSettingsForState(ActionType::ArrowRelease, weaponDrawn);
 			ApplyImpulse(archerySpring, archeryBlend, arrowSettings, globalMult, settings);
+			if (settings->fovPunchArrowEnabled) {
+				StartFovPunch(settings->fovPunchArrowStrength);
+			}
 			timeSinceAction = 0.0f;
 			if (settings->debugLogging) logger::info("[FPCameraSettle] Action: Arrow/Bolt Release (anim event)");
 		}
@@ -932,6 +1004,8 @@ namespace CameraSettle
 			return;
 		}
 		
+		lastDeltaTime = a_delta;
+		
 		// Handle game pause state
 		auto* ui = RE::UI::GetSingleton();
 		bool isGamePaused = ui && (ui->GameIsPaused() || ui->numPausesGame > 0);
@@ -979,6 +1053,11 @@ namespace CameraSettle
 			isInFirstPerson = true;
 			Reset();
 			logger::info("[FPCameraSettle] Entered first person");
+		}
+		
+		if (!baseFovReady) {
+			baseFov = camera->worldFOV - currentFovPunchOffset;
+			baseFovReady = true;
 		}
 		
 		debugFrameCounter++;
@@ -1130,6 +1209,14 @@ namespace CameraSettle
 				
 				// Sprint effects deactivate when EndAnimatedCameraDelta fires AND player stopped sprinting
 				bool isSprinting = actuallySprintingNow && !sprintStopTriggeredByAnim;
+
+				// Capture base FOV exactly when sprint starts to prevent punch drift
+				if (isSprinting && !wasSprinting && baseFovReady) {
+					if (auto* playerCamera = RE::PlayerCamera::GetSingleton()) {
+						float currentNoPunch = playerCamera->worldFOV - currentFovPunchOffset;
+						baseFov = currentNoPunch;
+					}
+				}
 			
 			// Calculate target FOV offset
 			float targetFovOffset = 0.0f;
@@ -1195,6 +1282,41 @@ namespace CameraSettle
 				}
 			}
 			}  // end else (sprint effects active)
+		}
+
+		// Update base FOV if it changes while idle (e.g., console command)
+		{
+			bool hasSprintOffset = std::abs(currentFovOffset) > 0.01f;
+			bool hasPunchOffset = std::abs(currentFovPunchOffset) > 0.001f;
+			if (baseFovReady && !hasSprintOffset && !hasPunchOffset) {
+				float currentFov = camera->worldFOV;
+				if (std::abs(currentFov - baseFov) > 0.01f) {
+					baseFov = currentFov;
+				}
+			}
+		}
+
+		// === UPDATE FOV PUNCH ===
+		if (fovPunchActive) {
+			fovPunchTimer += a_delta;
+			float t = fovPunchDuration > 0.0f ? (fovPunchTimer / fovPunchDuration) : 1.0f;
+			
+			if (t >= 1.0f) {
+				fovPunchActive = false;
+				fovPunchValue = 0.0f;
+			} else {
+				constexpr float PHASE1 = 0.4f;  // In -> overshoot
+				float value = 0.0f;
+				
+				if (t < PHASE1) {
+					float u = SmoothStep(t / PHASE1);
+					value = -1.0f + (2.0f * u);  // -1 to +1
+				} else {
+					float u = SmoothStep((t - PHASE1) / (1.0f - PHASE1));
+					value = 1.0f + (-1.0f * u);  // +1 to 0
+				}
+				fovPunchValue = value;
+			}
 		}
 		
 		// Debug logging
@@ -1305,22 +1427,28 @@ namespace CameraSettle
 			cameraNI->world.rotate = cameraNode->world.rotate;
 		}
 		
-		// Apply FOV offset (for sprint effect)
-		// Only modify FOV when we have an active offset
-		if (std::abs(currentFovOffset) > 0.01f) {
-			// Active FOV offset - capture base FOV if not already captured
-			if (!fovCaptured) {
-				baseFov = a_camera->worldFOV;
-				fovCaptured = true;
-			}
+		// Apply FOV offsets (sprint + punch)
+		float currentNoPunch = a_camera->worldFOV - currentFovPunchOffset;
+		// Recompute punch offset from the current (no-punch) FOV to keep it additive
+		currentFovPunchOffset = currentNoPunch * fovPunchStrength * fovPunchValue;
+		
+		bool hasSprintOffset = std::abs(currentFovOffset) > 0.01f;
+		bool hasPunchOffset = std::abs(currentFovPunchOffset) > 0.001f;
+		
+		if (baseFovReady) {
+			float targetFov = baseFov + currentFovOffset + currentFovPunchOffset;
 			
-			// Apply offset on top of captured base FOV
-			a_camera->worldFOV = baseFov + currentFovOffset;
-		} else if (fovCaptured) {
-			// Offset has returned to ~0, restore base FOV one last time and stop modifying
-			a_camera->worldFOV = baseFov;
-			currentFovOffset = 0.0f;
-			fovCaptured = false;  // Re-capture next time we have an offset
+			if (hasSprintOffset || hasPunchOffset) {
+				// Apply offsets directly while active
+				a_camera->worldFOV = targetFov;
+			} else {
+				// Smoothly return to base FOV if needed
+				float currentFov = a_camera->worldFOV;
+				if (std::abs(currentFov - baseFov) > 0.01f) {
+					float blendFactor = 1.0f - std::pow(1.0f - std::min(Settings::GetSingleton()->sprintFovBlendSpeed * lastDeltaTime, 0.99f), 1.0f);
+					a_camera->worldFOV = currentFov + (baseFov - currentFov) * blendFactor;
+				}
+			}
 		}
 		
 		// Update node with dirty flag (like ImprovedCameraSE's Helper::UpdateNode)
@@ -1390,16 +1518,21 @@ namespace CameraSettle
 		wasInDialogue = false;
 		
 		// Reset sprint effects state - restore FOV before resetting
-		if (fovCaptured) {
-			// Restore original FOV
+		if (baseFovReady) {
 			auto* camera = RE::PlayerCamera::GetSingleton();
 			if (camera) {
 				camera->worldFOV = baseFov;
 			}
 		}
+		baseFovReady = false;
 		currentFovOffset = 0.0f;
 		currentBlurStrength = 0.0f;
 		fovCaptured = false;
+		fovPunchActive = false;
+		fovPunchTimer = 0.0f;
+		fovPunchStrength = 0.0f;
+		fovPunchValue = 0.0f;
+		currentFovPunchOffset = 0.0f;
 		
 		// Stop blur effect if active
 		if (blurEffectActive && sprintImod) {

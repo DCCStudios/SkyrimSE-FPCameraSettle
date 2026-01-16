@@ -115,6 +115,9 @@ namespace CameraSettle
 		
 		// Update pending blend and apply impulse incrementally
 		void UpdateBlend(SpringState& a_state, PendingBlend& a_blend, float a_delta);
+
+		// Start a FOV punch sequence
+		void StartFovPunch(float a_strengthPercent);
 		
 		// Springs for different action categories (combined additively)
 		SpringState movementSpring;   // Walk/run/sprint
@@ -142,6 +145,8 @@ namespace CameraSettle
 		bool wasSneaking{ false };
 		bool wasInAir{ false };
 		bool wasMoving{ false };
+		bool baseFovReady{ false };
+		float lastDeltaTime{ 0.016f };
 		
 		// Jump tracking
 		float airTime{ 0.0f };
@@ -214,6 +219,14 @@ namespace CameraSettle
 		RE::TESImageSpaceModifier* sprintImod{ nullptr };  // Runtime IMOD for sprint blur
 		RE::ImageSpaceModifierInstanceForm* sprintImodInstance{ nullptr };
 		bool blurEffectActive{ false };
+
+		// === FOV PUNCH STATE ===
+		bool fovPunchActive{ false };
+		float fovPunchTimer{ 0.0f };
+		float fovPunchDuration{ 0.25f };
+		float fovPunchStrength{ 0.0f };          // Percent as fraction (0.05 = 5%)
+		float fovPunchValue{ 0.0f };             // -1..+1..0 punch curve value
+		float currentFovPunchOffset{ 0.0f };
 	};
 
 	// Install hooks

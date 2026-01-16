@@ -424,6 +424,16 @@ void Settings::Load()
 	sprintBlurRampUp = static_cast<float>(ini.GetDoubleValue("SprintEffects", "fBlurRampUp", sprintBlurRampUp));
 	sprintBlurRampDown = static_cast<float>(ini.GetDoubleValue("SprintEffects", "fBlurRampDown", sprintBlurRampDown));
 	sprintBlurRadius = static_cast<float>(ini.GetDoubleValue("SprintEffects", "fBlurRadius", sprintBlurRadius));
+
+	// Load FOV punch settings
+	fovPunchHitEnabled = ini.GetBoolValue("FOVPunch", "bHitEnabled", fovPunchHitEnabled);
+	fovPunchArrowEnabled = ini.GetBoolValue("FOVPunch", "bArrowEnabled", fovPunchArrowEnabled);
+	fovPunchHitStrength = static_cast<float>(ini.GetDoubleValue("FOVPunch", "fHitStrength", fovPunchHitStrength));
+	fovPunchArrowStrength = static_cast<float>(ini.GetDoubleValue("FOVPunch", "fArrowStrength", fovPunchArrowStrength));
+	fovPunchDuration = static_cast<float>(ini.GetDoubleValue("FOVPunch", "fDuration", fovPunchDuration));
+	fovPunchHitStrength = std::clamp(fovPunchHitStrength, 0.0f, 20.0f);
+	fovPunchArrowStrength = std::clamp(fovPunchArrowStrength, 0.0f, 20.0f);
+	fovPunchDuration = std::clamp(fovPunchDuration, 0.05f, 1.0f);
 	
 	// Load debug settings
 	debugLogging = ini.GetBoolValue("Debug", "bDebugLogging", debugLogging);
@@ -564,6 +574,13 @@ void Settings::Save()
 	ini.SetDoubleValue("SprintEffects", "fBlurRampUp", sprintBlurRampUp, "; IMOD ramp up time in seconds (how fast blur appears)");
 	ini.SetDoubleValue("SprintEffects", "fBlurRampDown", sprintBlurRampDown, "; IMOD ramp down time in seconds (how fast blur fades)");
 	ini.SetDoubleValue("SprintEffects", "fBlurRadius", sprintBlurRadius, "; Blur start radius (0 = blur from center, 1 = edges only)");
+
+	// FOV punch settings
+	ini.SetBoolValue("FOVPunch", "bHitEnabled", fovPunchHitEnabled, "; Enable FOV punch when taking a hit");
+	ini.SetBoolValue("FOVPunch", "bArrowEnabled", fovPunchArrowEnabled, "; Enable FOV punch on arrow/bolt release");
+	ini.SetDoubleValue("FOVPunch", "fHitStrength", fovPunchHitStrength, "; Hit punch strength as percent of current FOV (e.g., 5.0 = +/-5%)");
+	ini.SetDoubleValue("FOVPunch", "fArrowStrength", fovPunchArrowStrength, "; Arrow punch strength as percent of current FOV (e.g., 3.0 = +/-3%)");
+	ini.SetDoubleValue("FOVPunch", "fDuration", fovPunchDuration, "; Total punch duration in seconds");
 	
 	// Debug settings
 	ini.SetBoolValue("Debug", "bDebugLogging", debugLogging, "; Enable detailed debug logging");

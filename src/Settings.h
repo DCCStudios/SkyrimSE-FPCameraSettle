@@ -158,6 +158,13 @@ public:
 	float sprintBlurRampUp{ 0.1f };           // IMOD ramp up time (seconds) - how fast blur fades in
 	float sprintBlurRampDown{ 0.2f };         // IMOD ramp down time (seconds) - how fast blur fades out
 	float sprintBlurRadius{ 0.5f };           // Blur start radius (0 = from center, 1 = edges only)
+
+	// === FOV PUNCH ===
+	bool  fovPunchHitEnabled{ true };         // Enable FOV punch when taking a hit
+	bool  fovPunchArrowEnabled{ true };       // Enable FOV punch on arrow/bolt release
+	float fovPunchHitStrength{ 5.0f };        // Percent of FOV (5.0 = +/-5%)
+	float fovPunchArrowStrength{ 3.0f };      // Percent of FOV (3.0 = +/-3%)
+	float fovPunchDuration{ 0.25f };          // Total punch duration in seconds
 	
 	// === DEBUG ===
 	bool debugLogging{ false };

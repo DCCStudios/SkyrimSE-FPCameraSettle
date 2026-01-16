@@ -24,6 +24,7 @@ namespace Menu
 	void DrawSettlingSettings();
 	void DrawIdleNoiseSettings();
 	void DrawSprintEffectsSettings();
+	void DrawFovPunchSettings();
 	void DrawDebugSettings();
 	void DrawActionSettings();
 	void DrawActionEditor(ActionSettings& settings, const char* label, bool isDrawn);
@@ -44,6 +45,7 @@ namespace Menu
 		static inline bool settlingExpanded{ false };
 		static inline bool idleNoiseExpanded{ false };
 		static inline bool sprintEffectsExpanded{ false };
+		static inline bool fovPunchExpanded{ false };
 		static inline bool debugExpanded{ false };
 		static inline bool actionSettingsExpanded{ true };
 		
