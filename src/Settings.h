@@ -147,6 +147,11 @@ public:
 	float idleNoiseBlendTime{ 0.25f };        // Blend in/out time in seconds
 	bool  dialogueDisableIdleNoise{ false };  // Disable idle noise when in dialogue
 	
+	// Archery idle noise scaling
+	bool  idleNoiseScaleDuringArchery{ true };    // Scale idle noise down while drawing bow/crossbow
+	float idleNoiseArcheryScaleAmount{ 0.10f };  // Scale amount while drawing (0-1)
+	bool  idleNoiseArcheryScaleBySkill{ false };  // Scale amount based on Archery skill
+	
 	// === SPRINT EFFECTS ===
 	bool  sprintFovEnabled{ true };
 	float sprintFovDelta{ 10.0f };            // FOV increase when sprinting (degrees)

@@ -374,6 +374,32 @@ namespace Menu
 			}
 			
 			ImGui::Spacing();
+			ImGui::Separator();
+			ImGui::Text("Archery Scale:");
+			
+			if (CheckboxWithTooltip("Scale While Drawing Bow", &settings->idleNoiseScaleDuringArchery,
+				"Smoothly scale idle noise down while drawing a bow or crossbow,\n"
+				"then scale back up after release.")) {
+				MarkSettingsChanged();
+			}
+			
+			ImGui::BeginDisabled(!settings->idleNoiseScaleDuringArchery || settings->idleNoiseArcheryScaleBySkill);
+			if (SliderFloatWithTooltip("Draw Scale Amount", &settings->idleNoiseArcheryScaleAmount, 0.0f, 1.0f, "%.2f",
+				"Idle noise scale while drawing (0 = none, 1 = full).\n"
+				"Default 0.10 = 10% of normal noise.")) {
+				MarkSettingsChanged();
+			}
+			ImGui::EndDisabled();
+			
+			ImGui::BeginDisabled(!settings->idleNoiseScaleDuringArchery);
+			if (CheckboxWithTooltip("Scale by Archery Skill", &settings->idleNoiseArcheryScaleBySkill,
+				"When enabled, the scale amount is based on Archery skill.\n"
+				"100 Archery = 0 (no idle noise while drawing).")) {
+				MarkSettingsChanged();
+			}
+			ImGui::EndDisabled();
+			
+			ImGui::Spacing();
 			
 			// === WEAPON DRAWN ===
 			ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.4f, 0.2f, 0.2f, 0.6f));

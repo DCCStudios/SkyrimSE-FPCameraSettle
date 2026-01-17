@@ -1004,6 +1004,8 @@ namespace CameraSettle
 			if (settings->fovPunchArrowEnabled) {
 				StartFovPunch(settings->fovPunchArrowStrength);
 			}
+			archeryDrawActive = false;
+			archeryReleaseTimer = 0.15f;
 			timeSinceAction = 0.0f;
 			if (settings->debugLogging) logger::info("[FPCameraSettle] Action: Arrow/Bolt Release (anim event)");
 		}
@@ -1210,6 +1212,35 @@ namespace CameraSettle
 			                           idleNoiseAllowedAfterSprint && !dialogueBlocksNoise;
 			bool noiseEnabled = weaponDrawn ? settings->idleNoiseEnabledDrawn : settings->idleNoiseEnabledSheathed;
 			
+			// Determine if player is currently drawing a bow/crossbow
+			bool isArcheryDrawn = false;
+			if (settings->idleNoiseScaleDuringArchery) {
+				if (auto* weapon = player->GetEquippedObject(false)) {
+					if (auto* weap = weapon->As<RE::TESObjectWEAP>()) {
+						if (weap->IsBow() || weap->IsCrossbow()) {
+							auto attackState = playerState->GetAttackState();
+							switch (attackState) {
+							case RE::ATTACK_STATE_ENUM::kBowDraw:
+							case RE::ATTACK_STATE_ENUM::kBowAttached:
+							case RE::ATTACK_STATE_ENUM::kBowDrawn:
+							case RE::ATTACK_STATE_ENUM::kBowReleasing:
+							case RE::ATTACK_STATE_ENUM::kBowNextAttack:
+							case RE::ATTACK_STATE_ENUM::kBowFollowThrough:
+								isArcheryDrawn = true;
+								break;
+							default:
+								break;
+							}
+						}
+					}
+				}
+			}
+			
+			if (archeryReleaseTimer > 0.0f) {
+				archeryReleaseTimer = std::max(0.0f, archeryReleaseTimer - a_delta);
+			}
+			archeryDrawActive = isArcheryDrawn && archeryReleaseTimer <= 0.0f;
+			
 			// Log dialogue/map state transitions for debugging
 			bool inBlockingMenu = isInDialogue || isInMapMenu;
 			if (settings->debugLogging && inBlockingMenu != wasInDialogue) {
@@ -1244,6 +1275,24 @@ namespace CameraSettle
 				idleNoiseAmplitude = std::max(idleNoiseAmplitude - rampSpeed * a_delta, targetAmplitude);
 			}
 			
+			// Smoothly scale idle noise down while drawing a bow/crossbow
+			float targetArcheryScale = 1.0f;
+			if (settings->idleNoiseScaleDuringArchery && archeryDrawActive) {
+				if (settings->idleNoiseArcheryScaleBySkill) {
+					float archery = player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kArchery);
+					float skillT = std::clamp(archery / 100.0f, 0.0f, 1.0f);
+					targetArcheryScale = std::clamp(1.0f - skillT, 0.0f, 1.0f);
+				} else {
+					targetArcheryScale = settings->idleNoiseArcheryScaleAmount;
+				}
+			}
+			
+			if (idleNoiseArcheryScale < targetArcheryScale) {
+				idleNoiseArcheryScale = std::min(idleNoiseArcheryScale + rampSpeed * a_delta, targetArcheryScale);
+			} else if (idleNoiseArcheryScale > targetArcheryScale) {
+				idleNoiseArcheryScale = std::max(idleNoiseArcheryScale - rampSpeed * a_delta, targetArcheryScale);
+			}
+			
 			// Calculate sine waves from continuous phase
 			float sin1 = std::sin(idleNoisePhase);
 			float sin2 = std::sin(idleNoisePhase * 1.37f + 1.2f);
@@ -1261,13 +1310,14 @@ namespace CameraSettle
 			// Calculate noise DIRECTLY - no lerping toward a target!
 			// The amplitude smoothly ramps, so the noise smoothly appears/disappears
 			// This is truly additive: sine_value * max_amplitude * current_amplitude_factor
-			idleNoiseOffset.x = sin1 * posX * idleNoiseAmplitude;
-			idleNoiseOffset.y = sin2 * posY * idleNoiseAmplitude;
-			idleNoiseOffset.z = sin3 * posZ * idleNoiseAmplitude;
+			float finalAmplitude = idleNoiseAmplitude * idleNoiseArcheryScale;
+			idleNoiseOffset.x = sin1 * posX * finalAmplitude;
+			idleNoiseOffset.y = sin2 * posY * finalAmplitude;
+			idleNoiseOffset.z = sin3 * posZ * finalAmplitude;
 			
-			idleNoiseRotation.x = sin3 * rotX * DEG_TO_RAD * idleNoiseAmplitude;
-			idleNoiseRotation.y = sin1 * rotY * DEG_TO_RAD * idleNoiseAmplitude;
-			idleNoiseRotation.z = sin2 * rotZ * DEG_TO_RAD * idleNoiseAmplitude;
+			idleNoiseRotation.x = sin3 * rotX * DEG_TO_RAD * finalAmplitude;
+			idleNoiseRotation.y = sin1 * rotY * DEG_TO_RAD * finalAmplitude;
+			idleNoiseRotation.z = sin2 * rotZ * DEG_TO_RAD * finalAmplitude;
 		}
 		
 		// === UPDATE SPRINT EFFECTS (FOV + BLUR) ===
@@ -1589,9 +1639,12 @@ namespace CameraSettle
 		// Note: We don't reset idleNoisePhase - it continues smoothly
 		// Only reset the amplitude so noise fades out naturally
 		idleNoiseAmplitude = 0.0f;
+		idleNoiseArcheryScale = 1.0f;
 		idleNoiseOffset = { 0.0f, 0.0f, 0.0f };
 		idleNoiseRotation = { 0.0f, 0.0f, 0.0f };
 		wasInDialogue = false;
+		archeryDrawActive = false;
+		archeryReleaseTimer = 0.0f;
 		
 		// Reset sprint effects state - restore FOV before resetting
 		if (baseFovReady) {

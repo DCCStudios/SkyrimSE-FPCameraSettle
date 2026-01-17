@@ -211,10 +211,13 @@ namespace CameraSettle
 		float idleNoisePhase{ 0.0f };            // Continuous phase, never reset abruptly
 		// Amplitude ramps smoothly when entering/exiting idle (0 to 1)
 		float idleNoiseAmplitude{ 0.0f };        // Current amplitude multiplier
+		float idleNoiseArcheryScale{ 1.0f };     // Current archery scaling multiplier
 		// Final noise values (calculated directly, no lerping)
 		RE::NiPoint3 idleNoiseOffset{ 0.0f, 0.0f, 0.0f };    // Current position noise offset
 		RE::NiPoint3 idleNoiseRotation{ 0.0f, 0.0f, 0.0f };  // Current rotation noise offset
 		bool wasInDialogue{ false };             // Track dialogue state for transitions
+		bool archeryDrawActive{ false };
+		float archeryReleaseTimer{ 0.0f };
 		
 	public:
 		// === SPRINT EFFECTS STATE (public for initialization) ===

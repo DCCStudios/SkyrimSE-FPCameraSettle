@@ -413,6 +413,10 @@ void Settings::Load()
 	// Load shared idle noise settings
 	idleNoiseBlendTime = static_cast<float>(ini.GetDoubleValue("IdleNoise", "fBlendTime", idleNoiseBlendTime));
 	dialogueDisableIdleNoise = ini.GetBoolValue("IdleNoise", "bDialogueDisableIdleNoise", dialogueDisableIdleNoise);
+	idleNoiseScaleDuringArchery = ini.GetBoolValue("IdleNoise", "bScaleDuringArchery", idleNoiseScaleDuringArchery);
+	idleNoiseArcheryScaleAmount = static_cast<float>(ini.GetDoubleValue("IdleNoise", "fArcheryScaleAmount", idleNoiseArcheryScaleAmount));
+	idleNoiseArcheryScaleBySkill = ini.GetBoolValue("IdleNoise", "bArcheryScaleBySkill", idleNoiseArcheryScaleBySkill);
+	idleNoiseArcheryScaleAmount = std::clamp(idleNoiseArcheryScaleAmount, 0.0f, 1.0f);
 	
 	// Load sprint effects settings
 	sprintFovEnabled = ini.GetBoolValue("SprintEffects", "bFovEnabled", sprintFovEnabled);
@@ -563,6 +567,9 @@ void Settings::Save()
 	// Shared idle noise settings
 	ini.SetDoubleValue("IdleNoise", "fBlendTime", idleNoiseBlendTime, "; Blend in/out time in seconds");
 	ini.SetBoolValue("IdleNoise", "bDialogueDisableIdleNoise", dialogueDisableIdleNoise, "; Disable idle camera noise in dialogue and map menus (blends out smoothly)");
+	ini.SetBoolValue("IdleNoise", "bScaleDuringArchery", idleNoiseScaleDuringArchery, "; Scale idle noise down while drawing bow/crossbow");
+	ini.SetDoubleValue("IdleNoise", "fArcheryScaleAmount", idleNoiseArcheryScaleAmount, "; Scale amount while drawing (0-1, e.g., 0.1 = 10%)");
+	ini.SetBoolValue("IdleNoise", "bArcheryScaleBySkill", idleNoiseArcheryScaleBySkill, "; Scale amount based on Archery skill (100 = 0)");
 	
 	// Sprint effects
 	ini.SetBoolValue("SprintEffects", "bFovEnabled", sprintFovEnabled, "; Enable FOV increase when sprinting");
