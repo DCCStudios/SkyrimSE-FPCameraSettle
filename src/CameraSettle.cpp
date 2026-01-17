@@ -1,5 +1,7 @@
 #include "CameraSettle.h"
 #include "Settings.h"
+#include "PrecisionAPI.h"
+#include <Windows.h>
 
 namespace CameraSettle
 {
@@ -199,6 +201,75 @@ namespace CameraSettle
 		fovPunchDuration = std::max(settings->fovPunchDuration, 0.05f);
 		fovPunchStrength = std::clamp(a_strengthPercent / 100.0f, 0.0f, 0.5f);
 		fovPunchValue = 0.0f;
+	}
+
+	void CameraSettleManager::RegisterPrecisionAPI()
+	{
+		if (precisionHitCallbacksRegistered) {
+			return;
+		}
+		
+		auto module = ::GetModuleHandleW(L"Precision.dll");
+		if (!module) {
+			return;
+		}
+		
+		using RequestPluginAPIFn = void* (*)(PRECISION_API::InterfaceVersion);
+		auto requestAPI = reinterpret_cast<RequestPluginAPIFn>(::GetProcAddress(module, "RequestPluginAPI"));
+		if (!requestAPI) {
+			return;
+		}
+		
+		auto* api = static_cast<PRECISION_API::IVPrecision4*>(requestAPI(PRECISION_API::InterfaceVersion::V4));
+		if (!api) {
+			return;
+		}
+		
+		auto handle = SKSE::GetPluginHandle();
+		auto result = api->AddPostHitCallback(handle, [this](const PRECISION_API::PrecisionHitData& a_hitData, const RE::HitData& a_hitDataVanilla) {
+			OnPrecisionHit(a_hitData, a_hitDataVanilla);
+		});
+		
+		if (result == PRECISION_API::APIResult::OK || result == PRECISION_API::APIResult::AlreadyRegistered) {
+			precisionApi = api;
+			precisionHitCallbacksRegistered = true;
+			logger::info("[FPCameraSettle] Precision API detected - using Precision hit callbacks");
+		}
+	}
+
+	void CameraSettleManager::OnPrecisionHit(const PRECISION_API::PrecisionHitData& a_hitData, const RE::HitData& a_hitDataVanilla)
+	{
+		if (!isInFirstPerson || hitCooldown > 0.0f) {
+			return;
+		}
+		
+		auto* settings = Settings::GetSingleton();
+		if (!settings || !settings->enabled) {
+			return;
+		}
+		
+		auto* player = RE::PlayerCharacter::GetSingleton();
+		if (!player) {
+			return;
+		}
+		
+		if (a_hitData.target != player) {
+			return;
+		}
+		
+		bool weaponDrawn = player->AsActorState()->IsWeaponDrawn();
+		float stateMult = weaponDrawn ? settings->weaponDrawnMult : settings->weaponSheathedMult;
+		float globalMult = settings->globalIntensity * stateMult;
+		
+		float hitScale = a_hitDataVanilla.flags.any(RE::HitData::Flag::kBlocked) ? 0.5f : 1.0f;
+		
+		const auto& hitSettings = settings->GetActionSettingsForState(ActionType::TakingHit, weaponDrawn);
+		ApplyImpulse(hitSpring, hitBlend, hitSettings, globalMult * hitScale, settings);
+		if (settings->fovPunchHitEnabled) {
+			StartFovPunch(settings->fovPunchHitStrength);
+		}
+		hitCooldown = 0.15f;
+		timeSinceAction = 0.0f;
 	}
 	
 	void CameraSettleManager::UpdateSpring(SpringState& a_state, const ActionSettings& a_settings, float a_delta, Settings* a_globalSettings)
@@ -837,6 +908,11 @@ namespace CameraSettle
 		// Check if player is involved
 		bool playerHit = (a_event->target.get() == player);
 		bool playerHitting = (a_event->cause.get() == player);
+		
+		// If Precision is available, ignore hit events for player being hit to avoid near-miss false positives
+		if (precisionHitCallbacksRegistered && playerHit) {
+			return RE::BSEventNotifyControl::kContinue;
+		}
 		
 		if (playerHit) {
 			// Confirm this was an actual hit (not a miss) using lastHitData
@@ -1728,6 +1804,9 @@ namespace CameraSettle
 			eventSource->AddEventSink<RE::TESHitEvent>(CameraSettleManager::GetSingleton());
 			logger::info("[FPCameraSettle] Registered for hit events");
 		}
+		
+		// Register Precision hit callback if available
+		CameraSettleManager::GetSingleton()->RegisterPrecisionAPI();
 		
 		logger::info("[FPCameraSettle] Camera settle system installed");
 	}

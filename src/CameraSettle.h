@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Settings.h"
+#include "PrecisionAPI.h"
 
 namespace CameraSettle
 {
@@ -83,6 +84,9 @@ namespace CameraSettle
 		
 		// Reset all springs
 		void Reset();
+
+		// Precision integration
+		void RegisterPrecisionAPI();
 		
 		// Event handling for hit detection
 		RE::BSEventNotifyControl ProcessEvent(const RE::TESHitEvent* a_event, RE::BSTEventSource<RE::TESHitEvent>* a_eventSource) override;
@@ -118,6 +122,8 @@ namespace CameraSettle
 
 		// Start a FOV punch sequence
 		void StartFovPunch(float a_strengthPercent);
+
+		void OnPrecisionHit(const PRECISION_API::PrecisionHitData& a_hitData, const RE::HitData& a_hitDataVanilla);
 		
 		// Springs for different action categories (combined additively)
 		SpringState movementSpring;   // Walk/run/sprint
@@ -227,6 +233,10 @@ namespace CameraSettle
 		float fovPunchStrength{ 0.0f };          // Percent as fraction (0.05 = 5%)
 		float fovPunchValue{ 0.0f };             // -1..+1..0 punch curve value
 		float currentFovPunchOffset{ 0.0f };
+		
+		// Precision API state
+		PRECISION_API::IVPrecision4* precisionApi{ nullptr };
+		bool precisionHitCallbacksRegistered{ false };
 	};
 
 	// Install hooks
