@@ -417,6 +417,9 @@ void Settings::Load()
 	idleNoiseArcheryScaleAmount = static_cast<float>(ini.GetDoubleValue("IdleNoise", "fArcheryScaleAmount", idleNoiseArcheryScaleAmount));
 	idleNoiseArcheryScaleBySkill = ini.GetBoolValue("IdleNoise", "bArcheryScaleBySkill", idleNoiseArcheryScaleBySkill);
 	idleNoiseArcheryScaleAmount = std::clamp(idleNoiseArcheryScaleAmount, 0.0f, 1.0f);
+	idleNoiseEnabledSneaking = ini.GetBoolValue("IdleNoise", "bEnabledSneaking", idleNoiseEnabledSneaking);
+	idleNoiseScaleSneaking = static_cast<float>(ini.GetDoubleValue("IdleNoise", "fScaleSneaking", idleNoiseScaleSneaking));
+	idleNoiseScaleSneaking = std::clamp(idleNoiseScaleSneaking, 0.0f, 1.0f);
 	
 	// Load sprint effects settings
 	sprintFovEnabled = ini.GetBoolValue("SprintEffects", "bFovEnabled", sprintFovEnabled);
@@ -570,6 +573,8 @@ void Settings::Save()
 	ini.SetBoolValue("IdleNoise", "bScaleDuringArchery", idleNoiseScaleDuringArchery, "; Scale idle noise down while drawing bow/crossbow");
 	ini.SetDoubleValue("IdleNoise", "fArcheryScaleAmount", idleNoiseArcheryScaleAmount, "; Scale amount while drawing (0-1, e.g., 0.1 = 10%)");
 	ini.SetBoolValue("IdleNoise", "bArcheryScaleBySkill", idleNoiseArcheryScaleBySkill, "; Scale amount based on Archery skill (100 = 0)");
+	ini.SetBoolValue("IdleNoise", "bEnabledSneaking", idleNoiseEnabledSneaking, "; Allow idle camera noise while sneaking and standing still");
+	ini.SetDoubleValue("IdleNoise", "fScaleSneaking", idleNoiseScaleSneaking, "; Scale multiplier for idle noise while sneaking (0-1, e.g., 0.5 = 50%)");
 	
 	// Sprint effects
 	ini.SetBoolValue("SprintEffects", "bFovEnabled", sprintFovEnabled, "; Enable FOV increase when sprinting");

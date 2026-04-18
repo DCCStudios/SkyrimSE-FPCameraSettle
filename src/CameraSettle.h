@@ -64,7 +64,8 @@ namespace CameraSettle
 
 	class CameraSettleManager : 
 		public RE::BSTEventSink<RE::TESHitEvent>,
-		public RE::BSTEventSink<RE::BSAnimationGraphEvent>
+		public RE::BSTEventSink<RE::BSAnimationGraphEvent>,
+		public RE::BSTEventSink<RE::InputEvent*>
 	{
 	public:
 		static CameraSettleManager* GetSingleton()
@@ -93,6 +94,9 @@ namespace CameraSettle
 		
 		// Event handling for animation events (arrow release, etc.)
 		RE::BSEventNotifyControl ProcessEvent(const RE::BSAnimationGraphEvent* a_event, RE::BSTEventSource<RE::BSAnimationGraphEvent>* a_eventSource) override;
+		
+		// Input events (sprint button detection for early FOV response)
+		RE::BSEventNotifyControl ProcessEvent(RE::InputEvent* const* a_event, RE::BSTEventSource<RE::InputEvent*>* a_eventSource) override;
 		
 		// Trigger a specific action effect
 		void TriggerAction(ActionType a_action);
@@ -192,6 +196,11 @@ namespace CameraSettle
 		// Sprint stop tracking (for anim event vs state fallback)
 		bool sprintStopTriggeredByAnim{ false };
 		
+		// Early sprint-end detection via input events (bridges the behavior graph delay)
+		// Only fires on IsDown() while sprinting — the unambiguous toggle-off signal.
+		bool sprintInputEndedEarly{ false };
+		float sprintInputEndedTimer{ 0.0f };
+		
 		// Idle noise from sprint - only allow after EndAnimatedCameraDelta fires
 		bool idleNoiseAllowedAfterSprint{ true };
 		
@@ -212,6 +221,7 @@ namespace CameraSettle
 		// Amplitude ramps smoothly when entering/exiting idle (0 to 1)
 		float idleNoiseAmplitude{ 0.0f };        // Current amplitude multiplier
 		float idleNoiseArcheryScale{ 1.0f };     // Current archery scaling multiplier
+		float idleNoiseSneakScale{ 1.0f };       // Current sneak scaling multiplier
 		// Final noise values (calculated directly, no lerping)
 		RE::NiPoint3 idleNoiseOffset{ 0.0f, 0.0f, 0.0f };    // Current position noise offset
 		RE::NiPoint3 idleNoiseRotation{ 0.0f, 0.0f, 0.0f };  // Current rotation noise offset
@@ -223,11 +233,15 @@ namespace CameraSettle
 		// === SPRINT EFFECTS STATE (public for initialization) ===
 		float currentFovOffset{ 0.0f };          // Current FOV offset (blended)
 		float currentBlurStrength{ 0.0f };       // Current blur strength (blended)
-		float baseFov{ 0.0f };                   // Base FOV captured when entering first person
+		float baseFov{ 0.0f };                   // Dynamic base FOV (updated each frame from external sources)
 		bool fovCaptured{ false };               // Whether we've captured the base FOV
 		RE::TESImageSpaceModifier* sprintImod{ nullptr };  // Runtime IMOD for sprint blur
 		RE::ImageSpaceModifierInstanceForm* sprintImodInstance{ nullptr };
 		bool blurEffectActive{ false };
+
+		// === CROSS-PLUGIN FOV COMPATIBILITY ===
+		float lastAppliedFovOffset{ 0.0f };      // Total FOV offset we applied last frame
+		float dynamicBaseFov{ 0.0f };            // External base FOV computed by the hook each frame
 
 		// === FOV PUNCH STATE ===
 		bool fovPunchActive{ false };

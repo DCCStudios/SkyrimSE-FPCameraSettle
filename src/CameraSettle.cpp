@@ -558,8 +558,10 @@ namespace CameraSettle
 			const auto& sprintSettings = settings->GetActionSettingsForState(ActionType::SprintForward, weaponDrawn);
 			ApplyImpulse(movementSpring, movementBlend, sprintSettings, globalMult, settings);
 			timeSinceAction = 0.0f;
-			idleNoiseAllowedAfterSprint = false;  // Block idle noise until sprint effects blend out
-			sprintStopTriggeredByAnim = false;    // Reset flag when starting new sprint (for rapid toggle)
+			idleNoiseAllowedAfterSprint = false;
+			sprintStopTriggeredByAnim = false;
+			sprintInputEndedEarly = false;
+			sprintInputEndedTimer = 0.0f;
 			if (settings->debugLogging) logger::info("[FPCameraSettle] Action: Sprint Start");
 		} else if (!isSprinting && wasSprinting) {
 			if (!sprintStopTriggeredByAnim) {
@@ -572,6 +574,9 @@ namespace CameraSettle
 				if (settings->debugLogging) logger::info("[FPCameraSettle] Action: Sprint Stop (state fallback)");
 			}
 			sprintStopTriggeredByAnim = false;
+			// Prevent the direction-change detection from firing a SprintForward→RunForward
+			// impulse on top of the sprint-stop impulse in the same frame.
+			movementDebounce = 0.2f;
 		}
 		wasSprinting = isSprinting;
 		
@@ -1034,6 +1039,55 @@ namespace CameraSettle
 		return RE::BSEventNotifyControl::kContinue;
 	}
 	
+	RE::BSEventNotifyControl CameraSettleManager::ProcessEvent(RE::InputEvent* const* a_event, RE::BSTEventSource<RE::InputEvent*>*)
+	{
+		if (!a_event || !isInFirstPerson) {
+			return RE::BSEventNotifyControl::kContinue;
+		}
+
+		auto* userEvents = RE::UserEvents::GetSingleton();
+		if (!userEvents) {
+			return RE::BSEventNotifyControl::kContinue;
+		}
+
+		for (auto* event = *a_event; event; event = event->next) {
+			auto* button = event->AsButtonEvent();
+			if (!button || !button->HasIDCode()) {
+				continue;
+			}
+
+			if (button->QUserEvent() != userEvents->sprint) {
+				continue;
+			}
+
+			// Only handle IsDown — the unambiguous toggle-off signal.
+			//
+			// IsUp cannot be used reliably: with toggle sprint, the user may press and hold
+			// the button to start sprinting, then release it later — sprint continues because
+			// it's a toggle. Treating IsUp while sprinting as a stop signal causes false
+			// positives that trigger a premature FOV lerp-out.  The 200ms safety timeout
+			// would cancel it, but the visible jitter is worse than a 1-2 frame lag.
+			// Hold-to-sprint stop is caught by IsSprinting() in ApplyCameraOffset, which
+			// runs at the latest point in the frame and is only ~1 frame behind.
+			if (!button->IsDown()) {
+				continue;
+			}
+
+			auto* player = RE::PlayerCharacter::GetSingleton();
+			if (!player || !player->AsActorState()) {
+				continue;
+			}
+
+			if (player->AsActorState()->IsSprinting()) {
+				// Button pressed while already sprinting → toggle sprint turning off
+				sprintInputEndedEarly = true;
+				sprintInputEndedTimer = 0.0f;
+			}
+		}
+
+		return RE::BSEventNotifyControl::kContinue;
+	}
+
 	void CameraSettleManager::TriggerAction(ActionType a_action)
 	{
 		auto* settings = Settings::GetSingleton();
@@ -1196,7 +1250,8 @@ namespace CameraSettle
 			
 			bool isGrounded = !wasInAir && !player->IsInMidair();
 			bool isStandingStill = !wasMoving && !playerState->IsSprinting();
-			bool isNotInActiveAction = !playerState->IsSneaking() && !playerState->IsSwimming();
+			bool isSneakingNow = playerState->IsSneaking();
+			bool isNotInActiveAction = (!isSneakingNow || settings->idleNoiseEnabledSneaking) && !playerState->IsSwimming();
 			
 			// Check if in dialogue or map menu (both should disable idle noise if setting enabled)
 			bool isInDialogue = ui && ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME);
@@ -1292,6 +1347,17 @@ namespace CameraSettle
 			} else if (idleNoiseArcheryScale > targetArcheryScale) {
 				idleNoiseArcheryScale = std::max(idleNoiseArcheryScale - rampSpeed * a_delta, targetArcheryScale);
 			}
+
+			// Smoothly scale idle noise down when sneaking (if enabled)
+			float targetSneakScale = 1.0f;
+			if (isSneakingNow && settings->idleNoiseEnabledSneaking) {
+				targetSneakScale = settings->idleNoiseScaleSneaking;
+			}
+			if (idleNoiseSneakScale < targetSneakScale) {
+				idleNoiseSneakScale = std::min(idleNoiseSneakScale + rampSpeed * a_delta, targetSneakScale);
+			} else if (idleNoiseSneakScale > targetSneakScale) {
+				idleNoiseSneakScale = std::max(idleNoiseSneakScale - rampSpeed * a_delta, targetSneakScale);
+			}
 			
 			// Calculate sine waves from continuous phase
 			float sin1 = std::sin(idleNoisePhase);
@@ -1310,7 +1376,7 @@ namespace CameraSettle
 			// Calculate noise DIRECTLY - no lerping toward a target!
 			// The amplitude smoothly ramps, so the noise smoothly appears/disappears
 			// This is truly additive: sine_value * max_amplitude * current_amplitude_factor
-			float finalAmplitude = idleNoiseAmplitude * idleNoiseArcheryScale;
+			float finalAmplitude = idleNoiseAmplitude * idleNoiseArcheryScale * idleNoiseSneakScale;
 			idleNoiseOffset.x = sin1 * posX * finalAmplitude;
 			idleNoiseOffset.y = sin2 * posY * finalAmplitude;
 			idleNoiseOffset.z = sin3 * posZ * finalAmplitude;
@@ -1320,46 +1386,17 @@ namespace CameraSettle
 			idleNoiseRotation.z = sin2 * rotZ * DEG_TO_RAD * finalAmplitude;
 		}
 		
-		// === UPDATE SPRINT EFFECTS (FOV + BLUR) ===
+		// === UPDATE SPRINT EFFECTS (BLUR ONLY — FOV blending moved to ApplyCameraOffset for lower latency) ===
 		{
-			// Early-out: skip if sprint effects disabled and no active effects to blend out
-			bool hasActiveSprintEffects = std::abs(currentFovOffset) > 0.001f || std::abs(currentBlurStrength) > 0.001f;
-			bool sprintEffectsEnabled = settings->sprintFovEnabled || settings->sprintBlurEnabled;
+			bool hasActiveBlur = std::abs(currentBlurStrength) > 0.001f;
+			bool blurEnabled = settings->sprintBlurEnabled;
 			
-			if (!sprintEffectsEnabled && !hasActiveSprintEffects) {
-				// Nothing to do - skip this section entirely
+			if (!blurEnabled && !hasActiveBlur) {
+				// Nothing to do
 			} else {
-				// Only check actual sprint state when we need to (effects enabled or blending out)
 				auto* playerState = player->AsActorState();
-				bool actuallySprintingNow = playerState && playerState->IsSprinting() && !player->IsInMidair();
-				
-				// Sprint effects deactivate when EndAnimatedCameraDelta fires AND player stopped sprinting
-				bool isSprinting = actuallySprintingNow && !sprintStopTriggeredByAnim;
+				bool isSprinting = playerState && playerState->IsSprinting() && !player->IsInMidair();
 
-				// Capture base FOV exactly when sprint starts to prevent punch drift
-				if (isSprinting && !wasSprinting && baseFovReady) {
-					if (auto* playerCamera = RE::PlayerCamera::GetSingleton()) {
-						float currentNoPunch = playerCamera->worldFOV - currentFovPunchOffset;
-						baseFov = currentNoPunch;
-					}
-				}
-			
-			// Calculate target FOV offset
-			float targetFovOffset = 0.0f;
-			if (settings->sprintFovEnabled && isSprinting) {
-				targetFovOffset = settings->sprintFovDelta;
-			}
-			
-			// Smoothly blend FOV offset
-			float fovBlendFactor = 1.0f - std::pow(1.0f - std::min(settings->sprintFovBlendSpeed * a_delta, 0.99f), 1.0f);
-			currentFovOffset = currentFovOffset + (targetFovOffset - currentFovOffset) * fovBlendFactor;
-			
-			// Snap to target when very close to ensure complete blend
-			if (std::abs(currentFovOffset - targetFovOffset) < 0.01f) {
-				currentFovOffset = targetFovOffset;
-			}
-			
-			// Calculate target blur strength
 			float targetBlurStrength = 0.0f;
 			if (settings->sprintBlurEnabled && isSprinting) {
 				targetBlurStrength = settings->sprintBlurStrength;
@@ -1408,18 +1445,6 @@ namespace CameraSettle
 				}
 			}
 			}  // end else (sprint effects active)
-		}
-
-		// Update base FOV if it changes while idle (e.g., console command)
-		{
-			bool hasSprintOffset = std::abs(currentFovOffset) > 0.01f;
-			bool hasPunchOffset = std::abs(currentFovPunchOffset) > 0.001f;
-			if (baseFovReady && !hasSprintOffset && !hasPunchOffset) {
-				float currentFov = camera->worldFOV;
-				if (std::abs(currentFov - baseFov) > 0.01f) {
-					baseFov = currentFov;
-				}
-			}
 		}
 
 		// === UPDATE FOV PUNCH ===
@@ -1489,9 +1514,83 @@ namespace CameraSettle
 			movementSpring.rotationOffset.z + jumpSpring.rotationOffset.z + sneakSpring.rotationOffset.z + hitSpring.rotationOffset.z + archerySpring.rotationOffset.z + idleNoiseRotation.z
 		};
 		
+		// Blend sprint FOV offset in the camera hook for lowest latency.
+		// Combines IsSprinting() with early input detection to bridge the behavior graph delay.
+		{
+			auto* sprintSettings = Settings::GetSingleton();
+			float targetFovOffset = 0.0f;
+			if (sprintSettings->sprintFovEnabled) {
+				auto* player = RE::PlayerCharacter::GetSingleton();
+				if (player) {
+					auto* playerState = player->AsActorState();
+					bool sprintingNow = playerState && playerState->IsSprinting() && !player->IsInMidair();
+
+					if (sprintInputEndedEarly) {
+						if (!sprintingNow) {
+							// Sprint state caught up — confirmed, clear flag
+							sprintInputEndedEarly = false;
+							sprintInputEndedTimer = 0.0f;
+						} else {
+							sprintInputEndedTimer += lastDeltaTime;
+							if (sprintInputEndedTimer > 0.2f) {
+								// IsSprinting still true after 200ms — false alarm, clear
+								sprintInputEndedEarly = false;
+								sprintInputEndedTimer = 0.0f;
+							}
+						}
+					}
+
+					if (sprintingNow && !sprintInputEndedEarly) {
+						targetFovOffset = sprintSettings->sprintFovDelta;
+					}
+				}
+			}
+
+			float blendFactor = std::min(sprintSettings->sprintFovBlendSpeed * lastDeltaTime, 0.99f);
+			currentFovOffset += (targetFovOffset - currentFovOffset) * blendFactor;
+			if (std::abs(currentFovOffset - targetFovOffset) < 0.01f) {
+				currentFovOffset = targetFovOffset;
+			}
+		}
+
+		// Apply FOV offsets (sprint + punch) — must run every frame regardless of
+		// spring position/rotation offsets, otherwise the FOV jumps when springs decay to zero.
+		if (dynamicBaseFov > 0.0f) {
+			float dynamicBase = dynamicBaseFov;
+
+			float fovWithSprint = dynamicBase + currentFovOffset;
+			currentFovPunchOffset = fovWithSprint * fovPunchStrength * fovPunchValue;
+
+			float totalFovOffset = currentFovOffset + currentFovPunchOffset;
+
+			float prevWorldFov = a_camera->worldFOV;
+
+			if (std::abs(totalFovOffset) > 0.001f) {
+				a_camera->worldFOV = dynamicBase + totalFovOffset;
+				lastAppliedFovOffset = totalFovOffset;
+			} else {
+				a_camera->worldFOV = dynamicBase;
+				lastAppliedFovOffset = 0.0f;
+			}
+
+			if (Settings::GetSingleton()->debugLogging) {
+				float finalFov = a_camera->worldFOV;
+				float fovDelta = std::abs(finalFov - prevWorldFov);
+				bool hasOffset = std::abs(totalFovOffset) > 0.001f;
+				if (fovDelta > 0.05f || (hasOffset && debugFrameCounter % 15 == 0)) {
+					logger::info("[FPCameraSettle] FOV: base={:.2f} sprintOfs={:.2f} punchOfs={:.2f} total={:.2f} final={:.2f}",
+						dynamicBase, currentFovOffset, currentFovPunchOffset,
+						totalFovOffset, finalFov);
+				}
+			}
+
+			baseFov = dynamicBase;
+			baseFovReady = true;
+		}
+
 		// OPTIMIZATION: Use squared magnitudes to avoid sqrt
-		constexpr float MIN_POS_SQ = 0.001f * 0.001f;  // 0.000001
-		constexpr float MIN_ROT_SQ = 0.0001f * 0.0001f;  // 0.00000001
+		constexpr float MIN_POS_SQ = 0.001f * 0.001f;
+		constexpr float MIN_ROT_SQ = 0.0001f * 0.0001f;
 		
 		float posMagSq = totalPosOffset.x * totalPosOffset.x + totalPosOffset.y * totalPosOffset.y + totalPosOffset.z * totalPosOffset.z;
 		float rotMagSq = totalRotOffset.x * totalRotOffset.x + totalRotOffset.y * totalRotOffset.y + totalRotOffset.z * totalRotOffset.z;
@@ -1523,7 +1622,6 @@ namespace CameraSettle
 		RE::NiCamera* cameraNI = cachedNiCamera;
 		
 		if (!cameraNI) {
-			// Fallback: just modify cameraNode
 			cameraNode->local.translate.x += totalPosOffset.x;
 			cameraNode->local.translate.y += totalPosOffset.y;
 			cameraNode->local.translate.z += totalPosOffset.z;
@@ -1535,46 +1633,18 @@ namespace CameraSettle
 			return;
 		}
 		
-		// Apply position offset to both cameraNode and cameraNI (like ImprovedCameraSE)
-		// This is the key - we need to update the world.translate of the NiCamera directly
 		cameraNode->local.translate.x += totalPosOffset.x;
 		cameraNode->local.translate.y += totalPosOffset.y;
 		cameraNode->local.translate.z += totalPosOffset.z;
 		
-		// Also update world transforms directly (ImprovedCameraSE sets all three at once)
 		cameraNode->world.translate = cameraNode->local.translate;
 		cameraNI->world.translate = cameraNode->world.translate;
 		
-		// Apply rotation offset
 		if (rotMagSq > MIN_ROT_SQ) {
 			RE::NiMatrix3 rotMatrix = EulerToMatrix(totalRotOffset.x, totalRotOffset.y, totalRotOffset.z);
 			cameraNode->local.rotate = cameraNode->local.rotate * rotMatrix;
 			cameraNode->world.rotate = cameraNode->local.rotate;
 			cameraNI->world.rotate = cameraNode->world.rotate;
-		}
-		
-		// Apply FOV offsets (sprint + punch)
-		float currentNoPunch = a_camera->worldFOV - currentFovPunchOffset;
-		// Recompute punch offset from the current (no-punch) FOV to keep it additive
-		currentFovPunchOffset = currentNoPunch * fovPunchStrength * fovPunchValue;
-		
-		bool hasSprintOffset = std::abs(currentFovOffset) > 0.01f;
-		bool hasPunchOffset = std::abs(currentFovPunchOffset) > 0.001f;
-		
-		if (baseFovReady) {
-			float targetFov = baseFov + currentFovOffset + currentFovPunchOffset;
-			
-			if (hasSprintOffset || hasPunchOffset) {
-				// Apply offsets directly while active
-				a_camera->worldFOV = targetFov;
-			} else {
-				// Smoothly return to base FOV if needed
-				float currentFov = a_camera->worldFOV;
-				if (std::abs(currentFov - baseFov) > 0.01f) {
-					float blendFactor = 1.0f - std::pow(1.0f - std::min(Settings::GetSingleton()->sprintFovBlendSpeed * lastDeltaTime, 0.99f), 1.0f);
-					a_camera->worldFOV = currentFov + (baseFov - currentFov) * blendFactor;
-				}
-			}
 		}
 		
 		// Update node with dirty flag (like ImprovedCameraSE's Helper::UpdateNode)
@@ -1615,6 +1685,8 @@ namespace CameraSettle
 		hitCooldown = 0.0f;
 		debugFrameCounter = 0;
 		sprintStopTriggeredByAnim = false;
+		sprintInputEndedEarly = false;
+		sprintInputEndedTimer = 0.0f;
 		idleNoiseAllowedAfterSprint = true;
 		
 		// Reset speed-based blending state
@@ -1640,19 +1712,22 @@ namespace CameraSettle
 		// Only reset the amplitude so noise fades out naturally
 		idleNoiseAmplitude = 0.0f;
 		idleNoiseArcheryScale = 1.0f;
+		idleNoiseSneakScale = 1.0f;
 		idleNoiseOffset = { 0.0f, 0.0f, 0.0f };
 		idleNoiseRotation = { 0.0f, 0.0f, 0.0f };
 		wasInDialogue = false;
 		archeryDrawActive = false;
 		archeryReleaseTimer = 0.0f;
 		
-		// Reset sprint effects state - restore FOV before resetting
-		if (baseFovReady) {
+		// Reset sprint effects state - undo our FOV contribution
+		if (std::abs(lastAppliedFovOffset) > 0.001f) {
 			auto* camera = RE::PlayerCamera::GetSingleton();
 			if (camera) {
-				camera->worldFOV = baseFov;
+				camera->worldFOV -= lastAppliedFovOffset;
 			}
 		}
+		lastAppliedFovOffset = 0.0f;
+		dynamicBaseFov = 0.0f;
 		baseFovReady = false;
 		currentFovOffset = 0.0f;
 		currentBlurStrength = 0.0f;
@@ -1747,12 +1822,30 @@ namespace CameraSettle
 		private:
 			static void OnCameraUpdate(RE::TESCamera* a_camera)
 			{
+				auto* playerCamera = RE::PlayerCamera::GetSingleton();
+				auto* manager = CameraSettleManager::GetSingleton();
+
+				// Strip our offset before the chain so other plugins see the true base FOV
+				float stripped = 0.0f;
+				if (playerCamera && playerCamera == a_camera) {
+					float prevApplied = manager->lastAppliedFovOffset;
+					if (std::abs(prevApplied) > 0.001f) {
+						playerCamera->worldFOV -= prevApplied;
+					}
+					stripped = playerCamera->worldFOV;
+				}
+
 				_originalCameraUpdate(a_camera);
 				
-				// Apply our offsets after the game's camera update
-				auto* playerCamera = RE::PlayerCamera::GetSingleton();
 				if (playerCamera && playerCamera == a_camera) {
-					CameraSettleManager::GetSingleton()->ApplyCameraOffset(playerCamera);
+					float afterChain = playerCamera->worldFOV;
+					// If the chain wrote a new value, use it; otherwise use the stripped value
+					if (std::abs(afterChain - stripped) > 0.001f) {
+						manager->dynamicBaseFov = afterChain;
+					} else {
+						manager->dynamicBaseFov = stripped;
+					}
+					manager->ApplyCameraOffset(playerCamera);
 				}
 			}
 
@@ -1856,6 +1949,13 @@ namespace CameraSettle
 		if (eventSource) {
 			eventSource->AddEventSink<RE::TESHitEvent>(CameraSettleManager::GetSingleton());
 			logger::info("[FPCameraSettle] Registered for hit events");
+		}
+		
+		// Register for input events (early sprint button detection)
+		auto* inputManager = RE::BSInputDeviceManager::GetSingleton();
+		if (inputManager) {
+			inputManager->AddEventSink(static_cast<RE::BSTEventSink<RE::InputEvent*>*>(CameraSettleManager::GetSingleton()));
+			logger::info("[FPCameraSettle] Registered for input events");
 		}
 		
 		// Register Precision hit callback if available

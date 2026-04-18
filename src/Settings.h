@@ -151,6 +151,10 @@ public:
 	bool  idleNoiseScaleDuringArchery{ true };    // Scale idle noise down while drawing bow/crossbow
 	float idleNoiseArcheryScaleAmount{ 0.10f };  // Scale amount while drawing (0-1)
 	bool  idleNoiseArcheryScaleBySkill{ false };  // Scale amount based on Archery skill
+
+	// Sneak idle noise
+	bool  idleNoiseEnabledSneaking{ true };       // Allow idle noise while sneaking and standing still
+	float idleNoiseScaleSneaking{ 0.5f };         // Scale multiplier when sneaking (0-1)
 	
 	// === SPRINT EFFECTS ===
 	bool  sprintFovEnabled{ true };

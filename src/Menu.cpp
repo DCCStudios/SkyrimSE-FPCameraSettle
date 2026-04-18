@@ -400,6 +400,25 @@ namespace Menu
 			ImGui::EndDisabled();
 			
 			ImGui::Spacing();
+			ImGui::Separator();
+			ImGui::Text("Sneaking:");
+			
+			if (CheckboxWithTooltip("Allow While Sneaking", &settings->idleNoiseEnabledSneaking,
+				"When enabled, idle camera noise can play while you are sneaking\n"
+				"and standing still (same idle rules as normal).\n\n"
+				"When disabled, idle noise is fully blocked while sneaking.")) {
+				MarkSettingsChanged();
+			}
+			
+			ImGui::BeginDisabled(!settings->idleNoiseEnabledSneaking);
+			if (SliderFloatWithTooltip("Sneak Scale", &settings->idleNoiseScaleSneaking, 0.0f, 1.0f, "%.2f",
+				"Multiplier for idle noise amplitude while sneaking (0 = none, 1 = full).\n"
+				"Ramps smoothly when entering or leaving sneak.")) {
+				MarkSettingsChanged();
+			}
+			ImGui::EndDisabled();
+			
+			ImGui::Spacing();
 			
 			// === WEAPON DRAWN ===
 			ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.4f, 0.2f, 0.2f, 0.6f));
