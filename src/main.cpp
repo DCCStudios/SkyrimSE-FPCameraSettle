@@ -1,4 +1,5 @@
 #include "CameraSettle.h"
+#include "FallEffect.h"
 #include "Settings.h"
 #include "Menu.h"
 
@@ -41,6 +42,13 @@ void MessageHandler(SKSE::MessagingInterface::Message* a_msg)
 		CameraSettle::Install();
 		Menu::Register();
 		logger::info("FP Camera Settle initialized successfully");
+		break;
+	case SKSE::MessagingInterface::kPreLoadGame:
+	case SKSE::MessagingInterface::kNewGame:
+		// Stop all audio + visual effects immediately so we don't leave
+		// dangling waveOut devices or IMOD instances across save loads.
+		FallEffect::FallEffectManager::GetSingleton()->Reset();
+		logger::info("[FPCameraSettle] Save load / new game - fall effect reset");
 		break;
 	}
 }

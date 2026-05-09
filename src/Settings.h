@@ -174,7 +174,71 @@ public:
 	float fovPunchHitStrength{ 5.0f };        // Percent of FOV (5.0 = +/-5%)
 	float fovPunchArrowStrength{ 3.0f };      // Percent of FOV (3.0 = +/-3%)
 	float fovPunchDuration{ 0.25f };          // Total punch duration in seconds
-	
+
+	// === FALL EFFECT (Mirror's Edge style disorientation) ===
+	bool  fallEffectEnabled{ false };          // Master toggle for the entire fall effect (opt-in)
+
+	// Detection
+	float fallTriggerTime{ 0.75f };            // Seconds in the air before effect can begin
+	float fallTriggerVelocity{ 800.0f };       // Downward velocity threshold (units/sec) to trigger
+	bool  fallRequireBothConditions{ false };  // If true, BOTH time AND velocity must be exceeded
+
+	// Phase timing (seconds since fall began)
+	float fallPhase1Duration{ 1.0f };          // Phase 1 -> Phase 2 transition time
+	float fallPhase2Duration{ 2.0f };          // Phase 2 length (Phase 3 begins at p1+p2)
+
+	// Camera shake
+	bool  fallShakeEnabled{ true };
+	float fallShakeIntensity{ 1.0f };          // Master shake multiplier (0-3)
+	float fallShakeFadeIn{ 1.0f };             // Time from fall start to full shake intensity (seconds)
+	float fallShakePosScale{ 1.0f };           // Position shake amount scale
+	float fallShakeRotScale{ 1.0f };           // Rotation shake amount scale
+	float fallShakeFrequency{ 8.0f };          // Base oscillation frequency (Hz)
+	float fallShakeNoiseAmount{ 0.5f };        // 0 = pure sine, 1 = pure noise
+	bool  fallShakeAffectPosition{ true };     // Apply shake to position too
+	bool  fallShakeAffectRoll{ true };         // Allow roll component
+	bool  fallShakeAffectPitch{ true };        // Allow pitch component
+	bool  fallShakeAffectYaw{ true };          // Allow yaw component
+	float fallShakeDownwardBias{ 0.4f };       // Downward pitch bias in Phase 3 (degrees added to noise)
+	bool  fallShakeScaleByVelocity{ true };    // Increase shake intensity with fall speed
+
+	// Audio - volumes are 0..5 (0..500%). Software volume scaling is applied
+	// per-sample in the streaming callback — no waveOutSetVolume used.
+	bool  fallAudioEnabled{ true };
+	bool  fallWindEnabled{ true };
+	bool  fallWhineEnabled{ true };
+	float fallMasterVolume{ 1.0f };            // Master volume for ALL fall sounds (0-5)
+	float fallWindMaxVolume{ 1.0f };           // Wind loop max volume (0-5)
+	float fallWhineMaxVolume{ 0.6f };          // Whine loop max volume (0-5)
+	float fallWindFadeIn{ 0.5f };              // Time to fade wind from 0 -> max (seconds)
+	float fallWhineFadeIn{ 1.0f };             // Time to fade whine from 0 -> max (seconds)
+	float fallAudioFadeOut{ 0.6f };            // Landing fade-out duration (seconds)
+	bool  fallAudioVolumeByVelocity{ true };   // Scale audio volume by fall speed
+	int   fallFadeCurve{ 0 };                  // 0=Linear, 1=Smooth, 2=EaseIn, 3=EaseOut, 4=Exponential
+
+	// Visual: double vision
+	bool  fallDoubleVisionEnabled{ true };
+	float fallDoubleVisionMaxStrength{ 1.0f }; // 0-1
+	float fallDoubleVisionFadeIn{ 1.0f };      // Time from Phase 2 start to full DV strength (seconds)
+	// Visual: motion / radial blur
+	bool  fallMotionBlurEnabled{ true };
+	float fallMotionBlurMaxStrength{ 0.6f };
+	float fallMotionBlurFadeIn{ 0.5f };        // Time from Phase 3 start to full blur strength (seconds)
+
+	// FOV oscillation (Phase 3)
+	bool  fallFovEnabled{ true };
+	float fallFovOscAmplitude{ 3.0f };         // Degrees
+	float fallFovOscFrequency{ 1.5f };         // Hz
+
+	// Fatal landing (Mirror's Edge death slam)
+	bool  fallFatalEnabled{ true };            // Enable the fatal landing effect
+	float fallFatalBlackDuration{ 2.0f };      // How long to hold the black screen (seconds)
+	float fallFatalFadeInTime{ 0.05f };        // How fast to go black (seconds, very fast)
+	float fallFatalFadeOutTime{ 0.8f };        // How fast to fade back from black (seconds)
+	float fallFatalWhineBoost{ 2.0f };         // Whine volume spike on impact (multiplier of max)
+	float fallFatalWhineDecay{ 1.0f };         // How long the whine spike takes to fade out (seconds)
+	float fallFatalImpactVolume{ 1.0f };       // Volume for the death impact sound (0-5)
+
 	// === DEBUG ===
 	bool debugLogging{ false };
 	bool debugOnScreen{ false };

@@ -441,7 +441,80 @@ void Settings::Load()
 	fovPunchHitStrength = std::clamp(fovPunchHitStrength, 0.0f, 20.0f);
 	fovPunchArrowStrength = std::clamp(fovPunchArrowStrength, 0.0f, 20.0f);
 	fovPunchDuration = std::clamp(fovPunchDuration, 0.05f, 1.0f);
-	
+
+	// Load Fall Effect settings
+	fallEffectEnabled = ini.GetBoolValue("FallEffect", "bEnabled", fallEffectEnabled);
+	fallTriggerTime = static_cast<float>(ini.GetDoubleValue("FallEffect", "fTriggerTime", fallTriggerTime));
+	fallTriggerVelocity = static_cast<float>(ini.GetDoubleValue("FallEffect", "fTriggerVelocity", fallTriggerVelocity));
+	fallRequireBothConditions = ini.GetBoolValue("FallEffect", "bRequireBothConditions", fallRequireBothConditions);
+	fallPhase1Duration = static_cast<float>(ini.GetDoubleValue("FallEffect", "fPhase1Duration", fallPhase1Duration));
+	fallPhase2Duration = static_cast<float>(ini.GetDoubleValue("FallEffect", "fPhase2Duration", fallPhase2Duration));
+
+	fallShakeEnabled = ini.GetBoolValue("FallEffect_Shake", "bEnabled", fallShakeEnabled);
+	fallShakeIntensity = static_cast<float>(ini.GetDoubleValue("FallEffect_Shake", "fIntensity", fallShakeIntensity));
+	fallShakeFadeIn = static_cast<float>(ini.GetDoubleValue("FallEffect_Shake", "fFadeIn", fallShakeFadeIn));
+	fallShakeFadeIn = std::clamp(fallShakeFadeIn, 0.0f, 10.0f);
+	fallShakePosScale = static_cast<float>(ini.GetDoubleValue("FallEffect_Shake", "fPosScale", fallShakePosScale));
+	fallShakeRotScale = static_cast<float>(ini.GetDoubleValue("FallEffect_Shake", "fRotScale", fallShakeRotScale));
+	fallShakeFrequency = static_cast<float>(ini.GetDoubleValue("FallEffect_Shake", "fFrequency", fallShakeFrequency));
+	fallShakeNoiseAmount = static_cast<float>(ini.GetDoubleValue("FallEffect_Shake", "fNoiseAmount", fallShakeNoiseAmount));
+	fallShakeNoiseAmount = std::clamp(fallShakeNoiseAmount, 0.0f, 1.0f);
+	fallShakeAffectPosition = ini.GetBoolValue("FallEffect_Shake", "bAffectPosition", fallShakeAffectPosition);
+	fallShakeAffectRoll = ini.GetBoolValue("FallEffect_Shake", "bAffectRoll", fallShakeAffectRoll);
+	fallShakeAffectPitch = ini.GetBoolValue("FallEffect_Shake", "bAffectPitch", fallShakeAffectPitch);
+	fallShakeAffectYaw = ini.GetBoolValue("FallEffect_Shake", "bAffectYaw", fallShakeAffectYaw);
+	fallShakeDownwardBias = static_cast<float>(ini.GetDoubleValue("FallEffect_Shake", "fDownwardBias", fallShakeDownwardBias));
+	fallShakeScaleByVelocity = ini.GetBoolValue("FallEffect_Shake", "bScaleByVelocity", fallShakeScaleByVelocity);
+
+	fallAudioEnabled = ini.GetBoolValue("FallEffect_Audio", "bEnabled", fallAudioEnabled);
+	fallWindEnabled = ini.GetBoolValue("FallEffect_Audio", "bWindEnabled", fallWindEnabled);
+	fallWhineEnabled = ini.GetBoolValue("FallEffect_Audio", "bWhineEnabled", fallWhineEnabled);
+	fallMasterVolume = static_cast<float>(ini.GetDoubleValue("FallEffect_Audio", "fMasterVolume", fallMasterVolume));
+	fallWindMaxVolume = static_cast<float>(ini.GetDoubleValue("FallEffect_Audio", "fWindMaxVolume", fallWindMaxVolume));
+	fallWhineMaxVolume = static_cast<float>(ini.GetDoubleValue("FallEffect_Audio", "fWhineMaxVolume", fallWhineMaxVolume));
+	fallWindFadeIn   = static_cast<float>(ini.GetDoubleValue("FallEffect_Audio", "fWindFadeIn",   fallWindFadeIn));
+	fallWhineFadeIn  = static_cast<float>(ini.GetDoubleValue("FallEffect_Audio", "fWhineFadeIn",  fallWhineFadeIn));
+	fallAudioFadeOut = static_cast<float>(ini.GetDoubleValue("FallEffect_Audio", "fFadeOut", fallAudioFadeOut));
+	fallAudioVolumeByVelocity = ini.GetBoolValue("FallEffect_Audio", "bVolumeByVelocity", fallAudioVolumeByVelocity);
+	fallFadeCurve = static_cast<int>(ini.GetLongValue("FallEffect_Audio", "iFadeCurve", fallFadeCurve));
+	fallMasterVolume   = std::clamp(fallMasterVolume,   0.0f, 5.0f);
+	fallWindMaxVolume  = std::clamp(fallWindMaxVolume,  0.0f, 5.0f);
+	fallWhineMaxVolume = std::clamp(fallWhineMaxVolume, 0.0f, 5.0f);
+	fallWindFadeIn     = std::clamp(fallWindFadeIn,     0.0f, 10.0f);
+	fallWhineFadeIn    = std::clamp(fallWhineFadeIn,    0.0f, 10.0f);
+	fallAudioFadeOut   = std::clamp(fallAudioFadeOut,   0.05f, 5.0f);
+	fallFadeCurve      = std::clamp(fallFadeCurve,      0, 4);
+
+	fallDoubleVisionEnabled = ini.GetBoolValue("FallEffect_Visual", "bDoubleVisionEnabled", fallDoubleVisionEnabled);
+	fallDoubleVisionMaxStrength = static_cast<float>(ini.GetDoubleValue("FallEffect_Visual", "fDoubleVisionMaxStrength", fallDoubleVisionMaxStrength));
+	fallDoubleVisionFadeIn = static_cast<float>(ini.GetDoubleValue("FallEffect_Visual", "fDoubleVisionFadeIn", fallDoubleVisionFadeIn));
+	fallMotionBlurEnabled = ini.GetBoolValue("FallEffect_Visual", "bMotionBlurEnabled", fallMotionBlurEnabled);
+	fallMotionBlurMaxStrength = static_cast<float>(ini.GetDoubleValue("FallEffect_Visual", "fMotionBlurMaxStrength", fallMotionBlurMaxStrength));
+	fallMotionBlurFadeIn = static_cast<float>(ini.GetDoubleValue("FallEffect_Visual", "fMotionBlurFadeIn", fallMotionBlurFadeIn));
+	fallDoubleVisionMaxStrength = std::clamp(fallDoubleVisionMaxStrength, 0.0f, 2.0f);
+	fallDoubleVisionFadeIn = std::clamp(fallDoubleVisionFadeIn, 0.0f, 10.0f);
+	fallMotionBlurMaxStrength = std::clamp(fallMotionBlurMaxStrength, 0.0f, 2.0f);
+	fallMotionBlurFadeIn = std::clamp(fallMotionBlurFadeIn, 0.0f, 10.0f);
+
+	fallFovEnabled = ini.GetBoolValue("FallEffect_FOV", "bEnabled", fallFovEnabled);
+	fallFovOscAmplitude = static_cast<float>(ini.GetDoubleValue("FallEffect_FOV", "fOscAmplitude", fallFovOscAmplitude));
+	fallFovOscFrequency = static_cast<float>(ini.GetDoubleValue("FallEffect_FOV", "fOscFrequency", fallFovOscFrequency));
+
+	// Fatal landing
+	fallFatalEnabled       = ini.GetBoolValue("FallEffect_Fatal", "bEnabled", fallFatalEnabled);
+	fallFatalBlackDuration = static_cast<float>(ini.GetDoubleValue("FallEffect_Fatal", "fBlackDuration", fallFatalBlackDuration));
+	fallFatalFadeInTime    = static_cast<float>(ini.GetDoubleValue("FallEffect_Fatal", "fFadeInTime", fallFatalFadeInTime));
+	fallFatalFadeOutTime   = static_cast<float>(ini.GetDoubleValue("FallEffect_Fatal", "fFadeOutTime", fallFatalFadeOutTime));
+	fallFatalWhineBoost    = static_cast<float>(ini.GetDoubleValue("FallEffect_Fatal", "fWhineBoost", fallFatalWhineBoost));
+	fallFatalWhineDecay    = static_cast<float>(ini.GetDoubleValue("FallEffect_Fatal", "fWhineDecay", fallFatalWhineDecay));
+	fallFatalImpactVolume  = static_cast<float>(ini.GetDoubleValue("FallEffect_Fatal", "fImpactVolume", fallFatalImpactVolume));
+	fallFatalBlackDuration = std::clamp(fallFatalBlackDuration, 0.1f, 10.0f);
+	fallFatalFadeInTime    = std::clamp(fallFatalFadeInTime,    0.01f, 2.0f);
+	fallFatalFadeOutTime   = std::clamp(fallFatalFadeOutTime,   0.1f, 5.0f);
+	fallFatalWhineBoost    = std::clamp(fallFatalWhineBoost,    0.0f, 10.0f);
+	fallFatalWhineDecay    = std::clamp(fallFatalWhineDecay,    0.1f, 5.0f);
+	fallFatalImpactVolume  = std::clamp(fallFatalImpactVolume,  0.0f, 5.0f);
+
 	// Load debug settings
 	debugLogging = ini.GetBoolValue("Debug", "bDebugLogging", debugLogging);
 	debugOnScreen = ini.GetBoolValue("Debug", "bDebugOnScreen", debugOnScreen);
@@ -593,7 +666,60 @@ void Settings::Save()
 	ini.SetDoubleValue("FOVPunch", "fHitStrength", fovPunchHitStrength, "; Hit punch strength as percent of current FOV (e.g., 5.0 = +/-5%)");
 	ini.SetDoubleValue("FOVPunch", "fArrowStrength", fovPunchArrowStrength, "; Arrow punch strength as percent of current FOV (e.g., 3.0 = +/-3%)");
 	ini.SetDoubleValue("FOVPunch", "fDuration", fovPunchDuration, "; Total punch duration in seconds");
-	
+
+	// Fall Effect (Mirror's Edge style disorientation)
+	ini.SetBoolValue("FallEffect", "bEnabled", fallEffectEnabled, "; Master toggle for the entire fall disorientation effect");
+	ini.SetDoubleValue("FallEffect", "fTriggerTime", fallTriggerTime, "; Time in seconds in the air before the effect can begin");
+	ini.SetDoubleValue("FallEffect", "fTriggerVelocity", fallTriggerVelocity, "; Downward velocity threshold (units/sec) to trigger");
+	ini.SetBoolValue("FallEffect", "bRequireBothConditions", fallRequireBothConditions, "; If true, BOTH air time AND velocity must be exceeded");
+	ini.SetDoubleValue("FallEffect", "fPhase1Duration", fallPhase1Duration, "; Phase 1 -> Phase 2 transition time (seconds since fall start)");
+	ini.SetDoubleValue("FallEffect", "fPhase2Duration", fallPhase2Duration, "; Phase 2 length (Phase 3 begins at fPhase1Duration + fPhase2Duration)");
+
+	ini.SetBoolValue("FallEffect_Shake", "bEnabled", fallShakeEnabled, "; Enable procedural camera shake during falling");
+	ini.SetDoubleValue("FallEffect_Shake", "fIntensity", fallShakeIntensity, "; Master shake intensity multiplier (0-3)");
+	ini.SetDoubleValue("FallEffect_Shake", "fFadeIn", fallShakeFadeIn, "; Time from fall start to full shake intensity (seconds)");
+	ini.SetDoubleValue("FallEffect_Shake", "fPosScale", fallShakePosScale, "; Position shake scale (0-3)");
+	ini.SetDoubleValue("FallEffect_Shake", "fRotScale", fallShakeRotScale, "; Rotation shake scale (0-3)");
+	ini.SetDoubleValue("FallEffect_Shake", "fFrequency", fallShakeFrequency, "; Base shake oscillation frequency (Hz)");
+	ini.SetDoubleValue("FallEffect_Shake", "fNoiseAmount", fallShakeNoiseAmount, "; Mix between sine (0) and noise (1)");
+	ini.SetBoolValue("FallEffect_Shake", "bAffectPosition", fallShakeAffectPosition, "; Apply shake to camera position");
+	ini.SetBoolValue("FallEffect_Shake", "bAffectRoll", fallShakeAffectRoll, "; Allow roll component");
+	ini.SetBoolValue("FallEffect_Shake", "bAffectPitch", fallShakeAffectPitch, "; Allow pitch component");
+	ini.SetBoolValue("FallEffect_Shake", "bAffectYaw", fallShakeAffectYaw, "; Allow yaw component");
+	ini.SetDoubleValue("FallEffect_Shake", "fDownwardBias", fallShakeDownwardBias, "; Downward pitch bias added in Phase 3 (degrees)");
+	ini.SetBoolValue("FallEffect_Shake", "bScaleByVelocity", fallShakeScaleByVelocity, "; Scale shake intensity by fall velocity");
+
+	ini.SetBoolValue("FallEffect_Audio", "bEnabled", fallAudioEnabled, "; Enable audio (wind + whine)");
+	ini.SetBoolValue("FallEffect_Audio", "bWindEnabled", fallWindEnabled, "; Play wind loop");
+	ini.SetBoolValue("FallEffect_Audio", "bWhineEnabled", fallWhineEnabled, "; Play whine loop");
+	ini.SetDoubleValue("FallEffect_Audio", "fMasterVolume",  fallMasterVolume,  "; Master volume for all fall audio (0-5; >1.0 amplifies WAV)");
+	ini.SetDoubleValue("FallEffect_Audio", "fWindMaxVolume", fallWindMaxVolume, "; Wind loop maximum volume (0-5; >1.0 amplifies WAV)");
+	ini.SetDoubleValue("FallEffect_Audio", "fWhineMaxVolume",fallWhineMaxVolume,"; Whine loop maximum volume (0-5; >1.0 amplifies WAV)");
+	ini.SetDoubleValue("FallEffect_Audio", "fWindFadeIn",    fallWindFadeIn,    "; Wind fade-in time from start of fall (seconds)");
+	ini.SetDoubleValue("FallEffect_Audio", "fWhineFadeIn",   fallWhineFadeIn,   "; Whine fade-in time from start of Phase 2 (seconds)");
+	ini.SetDoubleValue("FallEffect_Audio", "fFadeOut",       fallAudioFadeOut,  "; Audio fade-out time on landing (seconds)");
+	ini.SetBoolValue("FallEffect_Audio", "bVolumeByVelocity", fallAudioVolumeByVelocity, "; Scale audio volume by fall velocity");
+	ini.SetLongValue("FallEffect_Audio", "iFadeCurve", fallFadeCurve, "; Fade curve: 0=Linear, 1=Smooth, 2=EaseIn, 3=EaseOut, 4=Exponential");
+
+	ini.SetBoolValue("FallEffect_Visual", "bDoubleVisionEnabled", fallDoubleVisionEnabled, "; Enable double-vision IMOD overlay");
+	ini.SetDoubleValue("FallEffect_Visual", "fDoubleVisionMaxStrength", fallDoubleVisionMaxStrength, "; Double vision maximum strength (0-2)");
+	ini.SetDoubleValue("FallEffect_Visual", "fDoubleVisionFadeIn", fallDoubleVisionFadeIn, "; Time from Phase 2 start to full DV strength (seconds)");
+	ini.SetBoolValue("FallEffect_Visual", "bMotionBlurEnabled", fallMotionBlurEnabled, "; Enable motion / radial blur");
+	ini.SetDoubleValue("FallEffect_Visual", "fMotionBlurMaxStrength", fallMotionBlurMaxStrength, "; Motion blur maximum strength (0-2)");
+	ini.SetDoubleValue("FallEffect_Visual", "fMotionBlurFadeIn", fallMotionBlurFadeIn, "; Time from Phase 3 start to full blur strength (seconds)");
+
+	ini.SetBoolValue("FallEffect_FOV", "bEnabled", fallFovEnabled, "; Enable FOV oscillation in Phase 3");
+	ini.SetDoubleValue("FallEffect_FOV", "fOscAmplitude", fallFovOscAmplitude, "; FOV oscillation amplitude (degrees)");
+	ini.SetDoubleValue("FallEffect_FOV", "fOscFrequency", fallFovOscFrequency, "; FOV oscillation frequency (Hz)");
+
+	ini.SetBoolValue("FallEffect_Fatal", "bEnabled", fallFatalEnabled, "; Enable Mirror's Edge-style fatal landing (cut to black on death by fall)");
+	ini.SetDoubleValue("FallEffect_Fatal", "fBlackDuration", fallFatalBlackDuration, "; How long the black screen is held (seconds)");
+	ini.SetDoubleValue("FallEffect_Fatal", "fFadeInTime", fallFatalFadeInTime, "; How fast the screen goes black on impact (seconds, very fast)");
+	ini.SetDoubleValue("FallEffect_Fatal", "fFadeOutTime", fallFatalFadeOutTime, "; How fast the screen fades back from black (seconds)");
+	ini.SetDoubleValue("FallEffect_Fatal", "fWhineBoost", fallFatalWhineBoost, "; Whine volume spike on impact (multiplier of configured max)");
+	ini.SetDoubleValue("FallEffect_Fatal", "fWhineDecay", fallFatalWhineDecay, "; How long the whine spike takes to decay (seconds)");
+	ini.SetDoubleValue("FallEffect_Fatal", "fImpactVolume", fallFatalImpactVolume, "; Impact body-slam sound volume (0-5; >1.0 amplifies)");
+
 	// Debug settings
 	ini.SetBoolValue("Debug", "bDebugLogging", debugLogging, "; Enable detailed debug logging");
 	ini.SetBoolValue("Debug", "bDebugOnScreen", debugOnScreen, "; Show debug info on screen");

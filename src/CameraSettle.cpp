@@ -1,6 +1,7 @@
 #include "CameraSettle.h"
 #include "Settings.h"
 #include "PrecisionAPI.h"
+#include "FallEffect.h"
 #include <Windows.h>
 
 namespace CameraSettle
@@ -1143,15 +1144,27 @@ namespace CameraSettle
 		bool isGamePaused = ui && (ui->GameIsPaused() || ui->numPausesGame > 0);
 		
 		if (isGamePaused) {
-			// Reset springs when transitioning to paused state (if enabled)
-			if (!wasGamePaused && settings->resetOnPause) {
+			auto* fallMgr = FallEffect::FallEffectManager::GetSingleton();
+			bool inFatalLanding = (fallMgr->GetPhase() == FallEffect::Phase::FatalLanding);
+
+			if (!wasGamePaused && settings->resetOnPause && !inFatalLanding) {
 				Reset();
 				if (settings->debugLogging) {
 					logger::info("[FPCameraSettle] Game paused - springs reset");
 				}
 			}
+
+			if (inFatalLanding) {
+				fallMgr->Update(a_delta);
+			} else {
+				fallMgr->PauseAudio();
+			}
 			wasGamePaused = true;
 			return;
+		}
+		// Resume fall-effect audio when returning from pause
+		if (wasGamePaused) {
+			FallEffect::FallEffectManager::GetSingleton()->ResumeAudio();
 		}
 		wasGamePaused = false;
 		
@@ -1172,11 +1185,32 @@ namespace CameraSettle
 			return;
 		}
 		
-		// Only process in first person
+		// If the player died during an active fall, transition to FatalLanding
+		// NOW, before the first-person check can trigger Reset() and kill it.
+		FallEffect::FallEffectManager::GetSingleton()->CheckDeathTransition();
+
+		// Only process in first person (but let FatalLanding play through death cam)
 		if (!camera->IsInFirstPerson()) {
+			auto* fallMgr = FallEffect::FallEffectManager::GetSingleton();
+			bool inFatalLanding = (fallMgr->GetPhase() == FallEffect::Phase::FatalLanding);
+
 			if (isInFirstPerson) {
-				Reset();
+				if (inFatalLanding) {
+					// Don't reset FallEffect — let death slam finish.
+					// Reset only the camera springs / sprint state.
+					movementSpring.Reset();
+					jumpSpring.Reset();
+					sneakSpring.Reset();
+					hitSpring.Reset();
+					archerySpring.Reset();
+				} else {
+					Reset();
+				}
 				isInFirstPerson = false;
+			}
+
+			if (inFatalLanding) {
+				fallMgr->Update(a_delta);
 			}
 			return;
 		}
@@ -1447,6 +1481,11 @@ namespace CameraSettle
 			}  // end else (sprint effects active)
 		}
 
+		// === UPDATE FALL EFFECT (Mirror's Edge style disorientation) ===
+		// Drives camera shake, audio, and visual IMODs. Outputs are read back
+		// in ApplyCameraOffset and added to the totals.
+		FallEffect::FallEffectManager::GetSingleton()->Update(a_delta);
+
 		// === UPDATE FOV PUNCH ===
 		if (fovPunchActive) {
 			fovPunchTimer += a_delta;
@@ -1501,17 +1540,22 @@ namespace CameraSettle
 			}
 		}
 		
-		// Combine all spring offsets + idle noise
+		// Pull fall-effect outputs (computed in CameraSettleManager::Update -> FallEffectManager::Update)
+		auto* fallMgr = FallEffect::FallEffectManager::GetSingleton();
+		const RE::NiPoint3& fallPos = fallMgr->GetPositionOffset();
+		const RE::NiPoint3& fallRot = fallMgr->GetRotationOffset();
+
+		// Combine all spring offsets + idle noise + fall-effect shake
 		RE::NiPoint3 totalPosOffset = {
-			movementSpring.positionOffset.x + jumpSpring.positionOffset.x + sneakSpring.positionOffset.x + hitSpring.positionOffset.x + archerySpring.positionOffset.x + idleNoiseOffset.x,
-			movementSpring.positionOffset.y + jumpSpring.positionOffset.y + sneakSpring.positionOffset.y + hitSpring.positionOffset.y + archerySpring.positionOffset.y + idleNoiseOffset.y,
-			movementSpring.positionOffset.z + jumpSpring.positionOffset.z + sneakSpring.positionOffset.z + hitSpring.positionOffset.z + archerySpring.positionOffset.z + idleNoiseOffset.z
+			movementSpring.positionOffset.x + jumpSpring.positionOffset.x + sneakSpring.positionOffset.x + hitSpring.positionOffset.x + archerySpring.positionOffset.x + idleNoiseOffset.x + fallPos.x,
+			movementSpring.positionOffset.y + jumpSpring.positionOffset.y + sneakSpring.positionOffset.y + hitSpring.positionOffset.y + archerySpring.positionOffset.y + idleNoiseOffset.y + fallPos.y,
+			movementSpring.positionOffset.z + jumpSpring.positionOffset.z + sneakSpring.positionOffset.z + hitSpring.positionOffset.z + archerySpring.positionOffset.z + idleNoiseOffset.z + fallPos.z
 		};
 		
 		RE::NiPoint3 totalRotOffset = {
-			movementSpring.rotationOffset.x + jumpSpring.rotationOffset.x + sneakSpring.rotationOffset.x + hitSpring.rotationOffset.x + archerySpring.rotationOffset.x + idleNoiseRotation.x,
-			movementSpring.rotationOffset.y + jumpSpring.rotationOffset.y + sneakSpring.rotationOffset.y + hitSpring.rotationOffset.y + archerySpring.rotationOffset.y + idleNoiseRotation.y,
-			movementSpring.rotationOffset.z + jumpSpring.rotationOffset.z + sneakSpring.rotationOffset.z + hitSpring.rotationOffset.z + archerySpring.rotationOffset.z + idleNoiseRotation.z
+			movementSpring.rotationOffset.x + jumpSpring.rotationOffset.x + sneakSpring.rotationOffset.x + hitSpring.rotationOffset.x + archerySpring.rotationOffset.x + idleNoiseRotation.x + fallRot.x,
+			movementSpring.rotationOffset.y + jumpSpring.rotationOffset.y + sneakSpring.rotationOffset.y + hitSpring.rotationOffset.y + archerySpring.rotationOffset.y + idleNoiseRotation.y + fallRot.y,
+			movementSpring.rotationOffset.z + jumpSpring.rotationOffset.z + sneakSpring.rotationOffset.z + hitSpring.rotationOffset.z + archerySpring.rotationOffset.z + idleNoiseRotation.z + fallRot.z
 		};
 		
 		// Blend sprint FOV offset in the camera hook for lowest latency.
@@ -1553,7 +1597,7 @@ namespace CameraSettle
 			}
 		}
 
-		// Apply FOV offsets (sprint + punch) — must run every frame regardless of
+		// Apply FOV offsets (sprint + punch + fall) — must run every frame regardless of
 		// spring position/rotation offsets, otherwise the FOV jumps when springs decay to zero.
 		if (dynamicBaseFov > 0.0f) {
 			float dynamicBase = dynamicBaseFov;
@@ -1561,7 +1605,8 @@ namespace CameraSettle
 			float fovWithSprint = dynamicBase + currentFovOffset;
 			currentFovPunchOffset = fovWithSprint * fovPunchStrength * fovPunchValue;
 
-			float totalFovOffset = currentFovOffset + currentFovPunchOffset;
+			float fallFovOffset = fallMgr->GetFovOffset();
+			float totalFovOffset = currentFovOffset + currentFovPunchOffset + fallFovOffset;
 
 			float prevWorldFov = a_camera->worldFOV;
 
@@ -1745,6 +1790,9 @@ namespace CameraSettle
 			blurEffectActive = false;
 		}
 		// Note: Don't destroy sprintImod here - it persists
+		
+		// Reset fall effect (stops audio + IMOD, clears phase)
+		FallEffect::FallEffectManager::GetSingleton()->Reset();
 		
 		// Don't reset animEventRegistered - it persists across resets
 		
@@ -1943,6 +1991,9 @@ namespace CameraSettle
 		
 		// Initialize sprint blur IMOD
 		InitializeSprintBlurIMOD();
+		
+		// Initialize fall-effect IMOD (clones one with double-vision + radial blur interpolators)
+		FallEffect::FallEffectManager::GetSingleton()->Initialize();
 		
 		// Register for hit events (explicit cast needed since we inherit from multiple event sinks)
 		auto* eventSource = RE::ScriptEventSourceHolder::GetSingleton();

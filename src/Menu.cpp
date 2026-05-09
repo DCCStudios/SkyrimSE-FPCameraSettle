@@ -1,5 +1,6 @@
 #include "Menu.h"
 #include "CameraSettle.h"
+#include "FallEffect.h"
 
 namespace Menu
 {
@@ -66,6 +67,7 @@ namespace Menu
 		DrawIdleNoiseSettings();
 		DrawSprintEffectsSettings();
 		DrawFovPunchSettings();
+		DrawFallEffectSettings();
 		DrawDebugSettings();
 		
 		ImGui::Separator();
@@ -669,6 +671,392 @@ namespace Menu
 			ImGui::EndDisabled();
 		} else {
 			State::fovPunchExpanded = false;
+		}
+	}
+	
+	void DrawFallEffectSettings()
+	{
+		auto* settings = Settings::GetSingleton();
+		
+		if (ImGui::CollapsingHeader("Falling Disorientation (Mirror's Edge)", State::fallEffectExpanded ? ImGuiTreeNodeFlags_DefaultOpen : 0)) {
+			State::fallEffectExpanded = true;
+			
+			ImGui::TextWrapped("Mirror's-Edge style disorientation effect for falls: wind + tinnitus audio, procedural camera shake, double vision, FOV oscillation. Audio plays only if loose WAV files are present at Data/SKSE/Plugins/FPCameraSettle/.");
+			ImGui::Spacing();
+			
+			ImGui::BeginDisabled(!State::editMode);
+			
+			if (CheckboxWithTooltip("Enable Fall Effect", &settings->fallEffectEnabled,
+				"Master toggle for the entire falling disorientation effect.\n"
+				"All sub-effects (audio/shake/visual/FOV) require this to be on.")) {
+				MarkSettingsChanged();
+			}
+			
+			ImGui::Spacing();
+			ImGui::Separator();
+			ImGui::Text("Trigger Conditions:");
+			
+			if (SliderFloatWithTooltip("Trigger Air Time", &settings->fallTriggerTime, 0.0f, 3.0f, "%.2f sec",
+				"Seconds the player must be in midair before the effect can begin.")) {
+				MarkSettingsChanged();
+			}
+			if (SliderFloatWithTooltip("Trigger Velocity", &settings->fallTriggerVelocity, 0.0f, 3000.0f, "%.0f units/s",
+				"Downward velocity threshold (units/sec) to trigger the effect.")) {
+				MarkSettingsChanged();
+			}
+			if (CheckboxWithTooltip("Require Both Conditions", &settings->fallRequireBothConditions,
+				"If enabled, BOTH air time AND velocity thresholds must be exceeded.\n"
+				"If disabled, EITHER one is enough.")) {
+				MarkSettingsChanged();
+			}
+			
+			ImGui::Spacing();
+			ImGui::Separator();
+			ImGui::Text("Phase Timing:");
+			
+			if (SliderFloatWithTooltip("Phase 1 Duration", &settings->fallPhase1Duration, 0.1f, 5.0f, "%.2f sec",
+				"How long Phase 1 (subtle wind/shake) lasts before Phase 2 begins.")) {
+				MarkSettingsChanged();
+			}
+			if (SliderFloatWithTooltip("Phase 2 Duration", &settings->fallPhase2Duration, 0.1f, 5.0f, "%.2f sec",
+				"How long Phase 2 (whine + double-vision intro) lasts before Phase 3 (full intensity) begins.")) {
+				MarkSettingsChanged();
+			}
+			
+			ImGui::Spacing();
+			
+			// === CAMERA SHAKE ===
+			ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.4f, 0.2f, 0.2f, 0.6f));
+			if (ImGui::TreeNode("Camera Shake##FallShake")) {
+				ImGui::PopStyleColor();
+				
+				if (CheckboxWithTooltip("Enable Shake", &settings->fallShakeEnabled, "Enable procedural camera shake during falling")) {
+					MarkSettingsChanged();
+				}
+				
+				if (SliderFloatWithTooltip("Master Intensity##FallShake", &settings->fallShakeIntensity, 0.0f, 3.0f, "%.2f",
+					"Master multiplier for shake amplitude.")) {
+					MarkSettingsChanged();
+				}
+				if (SliderFloatWithTooltip("Fade In##FallShake", &settings->fallShakeFadeIn, 0.0f, 10.0f, "%.2f sec",
+					"Time from fall start to full shake intensity.\n\n"
+					"Uses the Fade Curve setting from the Audio section.\n"
+					"Longer values give a more gradual build-up.")) {
+					settings->fallShakeFadeIn = std::clamp(settings->fallShakeFadeIn, 0.0f, 10.0f);
+					MarkSettingsChanged();
+				}
+				if (SliderFloatWithTooltip("Position Scale##FallShake", &settings->fallShakePosScale, 0.0f, 3.0f, "%.2f",
+					"Scale factor for the position component of shake.")) {
+					MarkSettingsChanged();
+				}
+				if (SliderFloatWithTooltip("Rotation Scale##FallShake", &settings->fallShakeRotScale, 0.0f, 3.0f, "%.2f",
+					"Scale factor for the rotation component of shake.")) {
+					MarkSettingsChanged();
+				}
+				if (SliderFloatWithTooltip("Frequency##FallShake", &settings->fallShakeFrequency, 0.5f, 30.0f, "%.1f Hz",
+					"Base oscillation frequency for the sine component.")) {
+					MarkSettingsChanged();
+				}
+				if (SliderFloatWithTooltip("Noise Amount##FallShake", &settings->fallShakeNoiseAmount, 0.0f, 1.0f, "%.2f",
+					"Mix between sine (0) and value-noise (1).\n"
+					"0 = pure sine wave shake (smooth, predictable)\n"
+					"1 = pure noise shake (jittery, organic)\n"
+					"0.5 = balanced mix")) {
+					MarkSettingsChanged();
+				}
+				
+				ImGui::Separator();
+				ImGui::Text("Axes:");
+				if (CheckboxWithTooltip("Position##FallShakeAxis", &settings->fallShakeAffectPosition, "Apply shake to camera position")) MarkSettingsChanged();
+				ImGui::SameLine();
+				if (CheckboxWithTooltip("Pitch##FallShakeAxis", &settings->fallShakeAffectPitch, "Allow pitch (look up/down) component")) MarkSettingsChanged();
+				ImGui::SameLine();
+				if (CheckboxWithTooltip("Yaw##FallShakeAxis", &settings->fallShakeAffectYaw, "Allow yaw (look left/right) component")) MarkSettingsChanged();
+				ImGui::SameLine();
+				if (CheckboxWithTooltip("Roll##FallShakeAxis", &settings->fallShakeAffectRoll, "Allow roll (head tilt) component")) MarkSettingsChanged();
+				
+				ImGui::Separator();
+				if (SliderFloatWithTooltip("Downward Bias##FallShake", &settings->fallShakeDownwardBias, 0.0f, 5.0f, "%.2f deg",
+					"Pitch bias (downward) added in Phase 3 to simulate the head being pulled down by wind.")) {
+					MarkSettingsChanged();
+				}
+				if (CheckboxWithTooltip("Scale by Velocity##FallShake", &settings->fallShakeScaleByVelocity,
+					"Increase shake intensity as fall velocity increases.")) {
+					MarkSettingsChanged();
+				}
+				
+				ImGui::TreePop();
+			} else {
+				ImGui::PopStyleColor();
+			}
+			
+			// === AUDIO ===
+			ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.2f, 0.3f, 0.4f, 0.6f));
+			if (ImGui::TreeNode("Audio##FallAudio")) {
+				ImGui::PopStyleColor();
+				
+				if (CheckboxWithTooltip("Enable Audio##FallAudio", &settings->fallAudioEnabled,
+					"Master toggle for fall audio (wind + whine).\n\n"
+					"Sound files must be placed at:\n"
+					"Data/SKSE/Plugins/FPCameraSettle/fallingwindloop.wav\n"
+					"Data/SKSE/Plugins/FPCameraSettle/fallingwhineloop.wav")) {
+					MarkSettingsChanged();
+				}
+				
+				{
+					float pct = settings->fallMasterVolume * 100.0f;
+					if (SliderFloatWithTooltip("Master Volume##FallAudio", &pct, 0.0f, 500.0f, "%.0f%%",
+						"Master volume for ALL fall audio.\n\n"
+						"0% = mute, 100% = native, up to 500%.\n"
+						"Volume is applied per-sample in software — does not\n"
+						"affect game music or other system sounds.")) {
+						settings->fallMasterVolume = std::clamp(pct / 100.0f, 0.0f, 5.0f);
+						MarkSettingsChanged();
+					}
+				}
+				if (CheckboxWithTooltip("Volume by Velocity##FallAudio", &settings->fallAudioVolumeByVelocity,
+					"Scale audio volume up as fall velocity increases.")) {
+					MarkSettingsChanged();
+				}
+				
+				ImGui::Separator();
+				ImGui::Text("Fade Settings:");
+				{
+					const char* curveNames[] = { "Linear", "Smooth (S-Curve)", "Ease In (slow start)", "Ease Out (fast start)", "Exponential (very slow)" };
+					if (ImGui::Combo("Fade Curve##FallAudio", &settings->fallFadeCurve, curveNames, 5)) {
+						MarkSettingsChanged();
+					}
+					if (ImGui::IsItemHovered()) {
+						ImGui::SetTooltip(
+							"Shape of the volume fade-in curve.\n\n"
+							"Linear: constant ramp, even throughout.\n"
+							"Smooth: S-curve, accelerates in the middle.\n"
+							"Ease In: slow start, builds gradually (quadratic).\n"
+							"Ease Out: fast start, plateaus gently.\n"
+							"Exponential: very slow start, late build (cubic).");
+					}
+				}
+				if (SliderFloatWithTooltip("Wind Fade-In##FallAudio", &settings->fallWindFadeIn, 0.0f, 10.0f, "%.2f sec",
+					"How long the wind loop takes to ramp from silence to full\n"
+					"volume after the fall starts.\n\n"
+					"Longer values + Ease In/Exponential curve give the most\n"
+					"gradual, barely-perceptible build.")) {
+					settings->fallWindFadeIn = std::clamp(settings->fallWindFadeIn, 0.0f, 10.0f);
+					MarkSettingsChanged();
+				}
+				if (SliderFloatWithTooltip("Whine Fade-In##FallAudio", &settings->fallWhineFadeIn, 0.0f, 10.0f, "%.2f sec",
+					"How long the whine takes to ramp from silence to full\n"
+					"volume from the start of Phase 2.")) {
+					settings->fallWhineFadeIn = std::clamp(settings->fallWhineFadeIn, 0.0f, 10.0f);
+					MarkSettingsChanged();
+				}
+				if (SliderFloatWithTooltip("Fade Out Time##FallAudio", &settings->fallAudioFadeOut, 0.05f, 5.0f, "%.2f sec",
+					"How long audio takes to fade out after landing.")) {
+					settings->fallAudioFadeOut = std::clamp(settings->fallAudioFadeOut, 0.05f, 5.0f);
+					MarkSettingsChanged();
+				}
+				
+				// Reload button + presence status
+				ImGui::Spacing();
+				if (ImGui::Button("Reload Audio Files##FallAudio")) {
+					FallEffect::FallEffectManager::GetSingleton()->ReloadAudio();
+				}
+				if (ImGui::IsItemHovered()) {
+					ImGui::SetTooltip("Closes the audio handles and re-checks both WAV files on disk.\n"
+						"Click after dropping new files into Data/SKSE/Plugins/FPCameraSettle/.");
+				}
+				
+				auto* fallMgr = FallEffect::FallEffectManager::GetSingleton();
+				
+				ImGui::Separator();
+				ImGui::Text("Wind Loop:");
+				if (CheckboxWithTooltip("Enable Wind##FallAudio", &settings->fallWindEnabled, "Play looping wind audio during fall")) MarkSettingsChanged();
+				{
+					float pct = settings->fallWindMaxVolume * 100.0f;
+					if (SliderFloatWithTooltip("Wind Max Volume##FallAudio", &pct, 0.0f, 500.0f, "%.0f%%",
+						"Wind loop maximum volume (0-500%).\n"
+						"Above 100% amplifies audio in software with clipping.")) {
+						settings->fallWindMaxVolume = std::clamp(pct / 100.0f, 0.0f, 5.0f);
+						MarkSettingsChanged();
+					}
+				}
+				if (fallMgr->IsWindFilePresent()) {
+					ImGui::TextColored(ImVec4(0.55f, 0.95f, 0.55f, 1.0f),
+						"FOUND: Data/SKSE/Plugins/FPCameraSettle/fallingwindloop.wav");
+				} else {
+					ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.45f, 1.0f),
+						"MISSING: Data/SKSE/Plugins/FPCameraSettle/fallingwindloop.wav");
+				}
+				
+				ImGui::Separator();
+				ImGui::Text("Whine Loop (tinnitus):");
+				if (CheckboxWithTooltip("Enable Whine##FallAudio", &settings->fallWhineEnabled, "Play looping high-pitched whine audio (Phase 2+)")) MarkSettingsChanged();
+				{
+					float pct = settings->fallWhineMaxVolume * 100.0f;
+					if (SliderFloatWithTooltip("Whine Max Volume##FallAudio", &pct, 0.0f, 500.0f, "%.0f%%",
+						"Whine loop maximum volume (0-500%).\n"
+						"Above 100% amplifies audio in software with clipping.")) {
+						settings->fallWhineMaxVolume = std::clamp(pct / 100.0f, 0.0f, 5.0f);
+						MarkSettingsChanged();
+					}
+				}
+				if (fallMgr->IsWhineFilePresent()) {
+					ImGui::TextColored(ImVec4(0.55f, 0.95f, 0.55f, 1.0f),
+						"FOUND: Data/SKSE/Plugins/FPCameraSettle/fallingwhineloop.wav");
+				} else {
+					ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.45f, 1.0f),
+						"MISSING: Data/SKSE/Plugins/FPCameraSettle/fallingwhineloop.wav");
+				}
+				
+				ImGui::TreePop();
+			} else {
+				ImGui::PopStyleColor();
+			}
+			
+			// === VISUAL ===
+			ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.3f, 0.3f, 0.4f, 0.6f));
+			if (ImGui::TreeNode("Visual Effects##FallVisual")) {
+				ImGui::PopStyleColor();
+				
+				ImGui::Text("Double Vision (Phase 2+):");
+				if (CheckboxWithTooltip("Enable Double Vision##FallVisual", &settings->fallDoubleVisionEnabled, "Apply ghosting/double-vision overlay during fall")) MarkSettingsChanged();
+				if (SliderFloatWithTooltip("Double Vision Strength##FallVisual", &settings->fallDoubleVisionMaxStrength, 0.0f, 2.0f, "%.2f", "Maximum strength of the double-vision overlay")) MarkSettingsChanged();
+				if (SliderFloatWithTooltip("DV Fade In##FallVisual", &settings->fallDoubleVisionFadeIn, 0.0f, 10.0f, "%.2f sec",
+					"Time from Phase 2 start to full double-vision strength.\n\n"
+					"Uses the Fade Curve setting from the Audio section.")) {
+					settings->fallDoubleVisionFadeIn = std::clamp(settings->fallDoubleVisionFadeIn, 0.0f, 10.0f);
+					MarkSettingsChanged();
+				}
+				
+				ImGui::Separator();
+				ImGui::Text("Motion / Radial Blur (Phase 3):");
+				if (CheckboxWithTooltip("Enable Motion Blur##FallVisual", &settings->fallMotionBlurEnabled, "Apply radial blur during peak fall intensity")) MarkSettingsChanged();
+				if (SliderFloatWithTooltip("Motion Blur Strength##FallVisual", &settings->fallMotionBlurMaxStrength, 0.0f, 2.0f, "%.2f", "Maximum strength of the radial/motion blur")) MarkSettingsChanged();
+				if (SliderFloatWithTooltip("Blur Fade In##FallVisual", &settings->fallMotionBlurFadeIn, 0.0f, 10.0f, "%.2f sec",
+					"Time from Phase 3 start to full motion blur strength.\n\n"
+					"Uses the Fade Curve setting from the Audio section.")) {
+					settings->fallMotionBlurFadeIn = std::clamp(settings->fallMotionBlurFadeIn, 0.0f, 10.0f);
+					MarkSettingsChanged();
+				}
+				
+				ImGui::TreePop();
+			} else {
+				ImGui::PopStyleColor();
+			}
+			
+			// === FOV OSCILLATION ===
+			ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.4f, 0.3f, 0.2f, 0.6f));
+			if (ImGui::TreeNode("FOV Oscillation##FallFOV")) {
+				ImGui::PopStyleColor();
+				
+				ImGui::TextWrapped("Subtle FOV oscillation in Phase 3 to enhance disorientation.");
+				ImGui::Spacing();
+				
+				if (CheckboxWithTooltip("Enable FOV Oscillation##FallFOV", &settings->fallFovEnabled, "Oscillate FOV during peak fall (Phase 3)")) MarkSettingsChanged();
+				if (SliderFloatWithTooltip("Amplitude##FallFOV", &settings->fallFovOscAmplitude, 0.0f, 15.0f, "%.1f deg", "FOV oscillation amplitude (degrees, peak-to-peak / 2)")) MarkSettingsChanged();
+				if (SliderFloatWithTooltip("Frequency##FallFOV", &settings->fallFovOscFrequency, 0.1f, 5.0f, "%.2f Hz", "FOV oscillation frequency")) MarkSettingsChanged();
+				
+				ImGui::TreePop();
+			} else {
+				ImGui::PopStyleColor();
+			}
+			
+			// === FATAL LANDING ===
+			ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.5f, 0.15f, 0.15f, 0.6f));
+			if (ImGui::TreeNode("Fatal Landing (Death Slam)##FallFatal")) {
+				ImGui::PopStyleColor();
+				
+				ImGui::TextWrapped("Mirror's Edge-style slam and fade when the player dies from a fall. Cuts wind, spikes the whine, plays an impact sound, and fades to black.");
+				ImGui::Spacing();
+				
+				if (CheckboxWithTooltip("Enable Fatal Landing##FallFatal", &settings->fallFatalEnabled,
+					"Enable the fatal landing effect when the player dies from fall damage.\n"
+					"Requires the main Fall Effect to also be enabled.")) {
+					MarkSettingsChanged();
+				}
+				
+				ImGui::Separator();
+				ImGui::Text("Black Screen:");
+				
+				if (SliderFloatWithTooltip("Black Duration##FallFatal", &settings->fallFatalBlackDuration, 0.1f, 10.0f, "%.2f sec",
+					"How long the screen stays fully black after impact.")) {
+					settings->fallFatalBlackDuration = std::clamp(settings->fallFatalBlackDuration, 0.1f, 10.0f);
+					MarkSettingsChanged();
+				}
+				if (SliderFloatWithTooltip("Fade In Speed##FallFatal", &settings->fallFatalFadeInTime, 0.01f, 2.0f, "%.2f sec",
+					"How fast the screen goes black on impact.\n"
+					"Lower = more sudden (more like Mirror's Edge).")) {
+					settings->fallFatalFadeInTime = std::clamp(settings->fallFatalFadeInTime, 0.01f, 2.0f);
+					MarkSettingsChanged();
+				}
+				if (SliderFloatWithTooltip("Fade Out Speed##FallFatal", &settings->fallFatalFadeOutTime, 0.1f, 5.0f, "%.2f sec",
+					"How fast the screen fades back from black to gameplay.")) {
+					settings->fallFatalFadeOutTime = std::clamp(settings->fallFatalFadeOutTime, 0.1f, 5.0f);
+					MarkSettingsChanged();
+				}
+				
+				ImGui::Separator();
+				ImGui::Text("Audio:");
+				
+				{
+					float pct = settings->fallFatalWhineBoost * 100.0f;
+					if (SliderFloatWithTooltip("Whine Spike##FallFatal", &pct, 0.0f, 1000.0f, "%.0f%%",
+						"Volume spike for the whine/tinnitus at the moment of impact.\n"
+						"Multiplied with the configured whine max volume.\n"
+						"200% = double the normal max volume.")) {
+						settings->fallFatalWhineBoost = std::clamp(pct / 100.0f, 0.0f, 10.0f);
+						MarkSettingsChanged();
+					}
+				}
+				if (SliderFloatWithTooltip("Whine Decay##FallFatal", &settings->fallFatalWhineDecay, 0.1f, 5.0f, "%.2f sec",
+					"How long the spiked whine takes to fade to silence after impact.")) {
+					settings->fallFatalWhineDecay = std::clamp(settings->fallFatalWhineDecay, 0.1f, 5.0f);
+					MarkSettingsChanged();
+				}
+				{
+					float pct = settings->fallFatalImpactVolume * 100.0f;
+					if (SliderFloatWithTooltip("Impact Volume##FallFatal", &pct, 0.0f, 500.0f, "%.0f%%",
+						"Volume of the body-impact sound (fallingdeathimpact.wav).\n"
+						"0% = mute, 100% = native, up to 500%.")) {
+						settings->fallFatalImpactVolume = std::clamp(pct / 100.0f, 0.0f, 5.0f);
+						MarkSettingsChanged();
+					}
+				}
+				
+				auto* fallMgr = FallEffect::FallEffectManager::GetSingleton();
+				if (fallMgr->IsImpactFilePresent()) {
+					ImGui::TextColored(ImVec4(0.55f, 0.95f, 0.55f, 1.0f),
+						"FOUND: Data/SKSE/Plugins/FPCameraSettle/fallingdeathimpact.wav");
+				} else {
+					ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.45f, 1.0f),
+						"MISSING: Data/SKSE/Plugins/FPCameraSettle/fallingdeathimpact.wav");
+				}
+				
+				ImGui::TreePop();
+			} else {
+				ImGui::PopStyleColor();
+			}
+			
+			ImGui::EndDisabled();
+			
+			// Live debug status read-out (read-only, useful for tuning)
+			ImGui::Spacing();
+			ImGui::Separator();
+			auto* fallMgr = FallEffect::FallEffectManager::GetSingleton();
+			const char* phaseName = "Inactive";
+			switch (fallMgr->GetPhase()) {
+				case FallEffect::Phase::Phase1:       phaseName = "Phase 1 (intro)";       break;
+				case FallEffect::Phase::Phase2:       phaseName = "Phase 2 (whine)";       break;
+				case FallEffect::Phase::Phase3:       phaseName = "Phase 3 (full)";        break;
+				case FallEffect::Phase::Landing:      phaseName = "Landing (fade out)";    break;
+				case FallEffect::Phase::FatalLanding: phaseName = "FATAL (death slam)";    break;
+				default: break;
+			}
+			ImGui::TextColored(ImVec4(0.7f, 0.85f, 1.0f, 1.0f),
+				"Status: %s  fallTime=%.2fs  intensity=%.2f",
+				phaseName, fallMgr->GetFallTime(), fallMgr->GetIntensity01());
+		} else {
+			State::fallEffectExpanded = false;
 		}
 	}
 	
