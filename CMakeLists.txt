@@ -38,6 +38,7 @@ set(SOURCES
 	src/Settings.cpp
 	src/CameraSettle.cpp
 	src/FallEffect.cpp
+	src/Lean.cpp
 	src/Menu.cpp
 )
 
@@ -46,6 +47,7 @@ set(HEADERS
 	src/Settings.h
 	src/CameraSettle.h
 	src/FallEffect.h
+	src/Lean.h
 	src/Menu.h
 	src/SKSEMenuFramework.h
 )

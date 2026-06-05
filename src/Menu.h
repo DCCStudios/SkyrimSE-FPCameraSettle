@@ -24,13 +24,22 @@ namespace Menu
 	void DrawSettlingSettings();
 	void DrawIdleNoiseSettings();
 	void DrawSprintEffectsSettings();
+	void DrawMovementNoiseSettings();
 	void DrawFovPunchSettings();
 	void DrawFallEffectSettings();
+	void DrawLeanSettings();
 	void DrawDebugSettings();
 	void DrawActionSettings();
 	void DrawActionEditor(ActionSettings& settings, const char* label, bool isDrawn);
 	void DrawSaveLoadButtons();
 	
+	// Convert an encoded scancode (keyboard 0-255, mouse 256-265, gamepad 266+) to a display name
+	const char* GetKeyName(int a_encoded);
+
+	// Check if an encoded scancode conflicts with a common game control.
+	// Returns the conflicting action name, or nullptr if no conflict.
+	const char* CheckKeyConflict(int a_encoded);
+
 	// UI State
 	struct State
 	{
@@ -46,8 +55,13 @@ namespace Menu
 		static inline bool settlingExpanded{ false };
 		static inline bool idleNoiseExpanded{ false };
 		static inline bool sprintEffectsExpanded{ false };
+		static inline bool movementNoiseExpanded{ false };
+		static inline bool walkNoiseExpanded{ false };
+		static inline bool runNoiseExpanded{ false };
+		static inline bool sprintNoiseExpanded{ false };
 		static inline bool fovPunchExpanded{ false };
 		static inline bool fallEffectExpanded{ false };
+		static inline bool leanExpanded{ false };
 		static inline bool debugExpanded{ false };
 		static inline bool actionSettingsExpanded{ true };
 		
@@ -63,6 +77,10 @@ namespace Menu
 		static inline bool showCopyToActionPopup{ false };
 		static inline int copyTargetActionIndex{ 0 };
 		static inline bool copyTargetIsDrawn{ true };
+
+		// Key binding listener state
+		static inline bool listeningForLeanLeft{ false };
+		static inline bool listeningForLeanRight{ false };
 	};
 	
 	// Mark settings as changed (invalidates caches and marks unsaved)

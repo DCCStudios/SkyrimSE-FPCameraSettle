@@ -1,7 +1,9 @@
 #include "CameraSettle.h"
+#include "Menu.h"
 #include "Settings.h"
 #include "PrecisionAPI.h"
 #include "FallEffect.h"
+#include "Lean.h"
 #include <Windows.h>
 
 namespace CameraSettle
@@ -11,6 +13,62 @@ namespace CameraSettle
 		constexpr float PI = 3.14159265358979323846f;
 		constexpr float DEG_TO_RAD = PI / 180.0f;
 		constexpr float RAD_TO_DEG = 180.0f / PI;
+
+		// Rotation matrix for a single axis-angle rotation (Rodrigues' formula)
+		RE::NiMatrix3 AxisAngleMatrix(const RE::NiPoint3& a_axis, float a_angle)
+		{
+			float c = std::cos(a_angle);
+			float s = std::sin(a_angle);
+			float t = 1.0f - c;
+			float x = a_axis.x, y = a_axis.y, z = a_axis.z;
+
+			RE::NiMatrix3 result;
+			result.entry[0][0] = t * x * x + c;
+			result.entry[0][1] = t * x * y - s * z;
+			result.entry[0][2] = t * x * z + s * y;
+			result.entry[1][0] = t * x * y + s * z;
+			result.entry[1][1] = t * y * y + c;
+			result.entry[1][2] = t * y * z - s * x;
+			result.entry[2][0] = t * x * z - s * y;
+			result.entry[2][1] = t * y * z + s * x;
+			result.entry[2][2] = t * z * z + c;
+			return result;
+		}
+
+		RE::NiMatrix3 TransposeMatrix(const RE::NiMatrix3& m)
+		{
+			RE::NiMatrix3 r;
+			r.entry[0][0] = m.entry[0][0]; r.entry[0][1] = m.entry[1][0]; r.entry[0][2] = m.entry[2][0];
+			r.entry[1][0] = m.entry[0][1]; r.entry[1][1] = m.entry[1][1]; r.entry[1][2] = m.entry[2][1];
+			r.entry[2][0] = m.entry[0][2]; r.entry[2][1] = m.entry[1][2]; r.entry[2][2] = m.entry[2][2];
+			return r;
+		}
+
+		// Propagate world transforms down a bone hierarchy after modifying local transforms.
+		// Skips effect containers to avoid disturbing VFX particles.
+		void PropagateWorldTransforms(RE::NiAVObject* a_obj)
+		{
+			if (!a_obj) return;
+
+			RE::NiUpdateData ud{};
+			ud.flags = RE::NiUpdateData::Flag::kDirty;
+			a_obj->UpdateWorldData(&ud);
+
+			auto* node = a_obj->AsNode();
+			if (!node) return;
+
+			auto& children = node->GetChildren();
+			for (std::uint16_t i = 0; i < children.capacity(); ++i) {
+				auto& child = children[i];
+				if (!child) continue;
+				std::string_view name = child->name.c_str();
+				bool isEffect = (name == "MagicEffectsNode") ||
+				                (name.find("Particle") != std::string_view::npos) ||
+				                (name.find("-Emitter") != std::string_view::npos);
+				if (isEffect) continue;
+				PropagateWorldTransforms(child.get());
+			}
+		}
 		
 		RE::NiPoint3 ClampVector(const RE::NiPoint3& a_vec, float a_max)
 		{
@@ -1042,7 +1100,13 @@ namespace CameraSettle
 	
 	RE::BSEventNotifyControl CameraSettleManager::ProcessEvent(RE::InputEvent* const* a_event, RE::BSTEventSource<RE::InputEvent*>*)
 	{
-		if (!a_event || !isInFirstPerson) {
+		if (!a_event) {
+			return RE::BSEventNotifyControl::kContinue;
+		}
+
+		auto* settings = Settings::GetSingleton();
+
+		if (!isInFirstPerson) {
 			return RE::BSEventNotifyControl::kContinue;
 		}
 
@@ -1057,32 +1121,69 @@ namespace CameraSettle
 				continue;
 			}
 
-			if (button->QUserEvent() != userEvents->sprint) {
+			// Track last input device for gamepad-only contextual lean detection
+			if (button->IsDown()) {
+				Lean::LeanManager::GetSingleton()->SetLastInputDevice(button->GetDevice());
+			}
+
+			// === SPRINT KEY HANDLING ===
+			if (button->QUserEvent() == userEvents->sprint) {
+				if (!button->IsDown()) {
+					continue;
+				}
+
+				auto* player = RE::PlayerCharacter::GetSingleton();
+				if (!player || !player->AsActorState()) {
+					continue;
+				}
+
+				if (player->AsActorState()->IsSprinting()) {
+					sprintInputEndedEarly = true;
+					sprintInputEndedTimer = 0.0f;
+				}
 				continue;
 			}
 
-			// Only handle IsDown — the unambiguous toggle-off signal.
-			//
-			// IsUp cannot be used reliably: with toggle sprint, the user may press and hold
-			// the button to start sprinting, then release it later — sprint continues because
-			// it's a toggle. Treating IsUp while sprinting as a stop signal causes false
-			// positives that trigger a premature FOV lerp-out.  The 200ms safety timeout
-			// would cancel it, but the visible jitter is worse than a 1-2 frame lag.
-			// Hold-to-sprint stop is caught by IsSprinting() in ApplyCameraOffset, which
-			// runs at the latest point in the frame and is only ~1 frame behind.
-			if (!button->IsDown()) {
-				continue;
-			}
+			// === LEAN KEY HANDLING ===
+			if (settings->leanEnabled && settings->leanManualEnabled) {
 
-			auto* player = RE::PlayerCharacter::GetSingleton();
-			if (!player || !player->AsActorState()) {
-				continue;
-			}
+				auto* leanMgr = Lean::LeanManager::GetSingleton();
+				uint32_t encodedKey = button->GetIDCode();
+				auto device = button->GetDevice();
+				if (device == RE::INPUT_DEVICE::kMouse)
+					encodedKey += 256;
+				else if (device == RE::INPUT_DEVICE::kGamepad)
+					encodedKey += 266;
+				else if (device != RE::INPUT_DEVICE::kKeyboard)
+					continue;
 
-			if (player->AsActorState()->IsSprinting()) {
-				// Button pressed while already sprinting → toggle sprint turning off
-				sprintInputEndedEarly = true;
-				sprintInputEndedTimer = 0.0f;
+				bool isLeanLeft = (encodedKey == static_cast<uint32_t>(settings->leanLeftScancode));
+				bool isLeanRight = (encodedKey == static_cast<uint32_t>(settings->leanRightScancode));
+
+				if (!isLeanLeft && !isLeanRight) continue;
+
+				if (settings->debugLogging) {
+					logger::info("[Lean] Input: key={} device={} down={} pressed={} up={} isLeft={} isRight={} mode={}",
+						encodedKey, static_cast<int>(device),
+						button->IsDown(), button->IsPressed(), button->IsUp(),
+						isLeanLeft, isLeanRight, settings->leanManualMode);
+				}
+
+				if (settings->leanManualMode == 0) {
+					// Hold mode
+					if (button->IsDown() || button->IsPressed()) {
+						if (isLeanLeft) leanMgr->SetManualLean(-1.0f);
+						else            leanMgr->SetManualLean(1.0f);
+					} else if (button->IsUp()) {
+						leanMgr->ClearManualLean();
+					}
+				} else {
+					// Toggle mode
+					if (button->IsDown()) {
+						if (isLeanLeft)  leanMgr->ToggleLeanLeft();
+						else             leanMgr->ToggleLeanRight();
+					}
+				}
 			}
 		}
 
@@ -1346,7 +1447,7 @@ namespace CameraSettle
 			
 			// ALWAYS advance phase - the wave is always "there", just with zero amplitude when not idle
 			// This ensures smooth continuity when amplitude ramps up/down
-			idleNoisePhase += a_delta * freq * 2.0f * PI;
+			idleNoisePhase += a_delta * freq * RE::BSTimer::QGlobalTimeMultiplier() * 2.0f * PI;
 			
 			// Keep phase bounded to avoid float precision issues over long play sessions
 			if (idleNoisePhase > 1000.0f * PI) {
@@ -1420,6 +1521,169 @@ namespace CameraSettle
 			idleNoiseRotation.z = sin2 * rotZ * DEG_TO_RAD * finalAmplitude;
 		}
 		
+			// === TRACK PLAYER WORLD SPEED (for speed-based sprint ramp-down) ===
+		if (settings->sprintNoiseStopMode == 2) {
+			RE::NiPoint3 pos = player->GetPosition();
+			if (hasLastPlayerPos && a_delta > 0.0f) {
+				RE::NiPoint3 diff = { pos.x - lastPlayerPos.x, pos.y - lastPlayerPos.y, pos.z - lastPlayerPos.z };
+				float dist = std::sqrt(diff.x * diff.x + diff.y * diff.y + diff.z * diff.z);
+				float instantSpeed = dist / a_delta;
+				float smoothing = std::min(12.0f * a_delta, 0.85f);
+				playerWorldSpeed += (instantSpeed - playerWorldSpeed) * smoothing;
+			}
+			lastPlayerPos = pos;
+			hasLastPlayerPos = true;
+
+			// Query sprint reference speed from the race's sprint movement type + SpeedMult
+			float refSpeed = 0.0f;
+			if (auto* race = player->GetRace()) {
+				if (auto* sprintMoveType = race->baseMoveTypes[RE::TESRace::MovementTypes::kSprint]) {
+					refSpeed = sprintMoveType->movementTypeData.defaultData.speeds
+						[RE::Movement::SPEED_DIRECTIONS::kForward][RE::Movement::MaxSpeeds::kRun];
+					float speedMult = player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kSpeedMult) / 100.0f;
+					refSpeed *= std::max(speedMult, 0.01f);
+				}
+			}
+
+			if (refSpeed > 1.0f) {
+				float rawRatio = std::clamp(playerWorldSpeed / refSpeed, 0.0f, 1.0f);
+				float ratioSmooth = std::min(8.0f * a_delta, 0.7f);
+				sprintSpeedRatio += (rawRatio - sprintSpeedRatio) * ratioSmooth;
+			} else {
+				sprintSpeedRatio = 0.0f;
+			}
+		} else {
+			hasLastPlayerPos = false;
+		}
+
+		// === UPDATE MOVEMENT CAMERA NOISE (three-layer: walk/run/sprint) ===
+		{
+			auto* playerState = player->AsActorState();
+			bool isSprinting = playerState && playerState->IsSprinting() && !player->IsInMidair();
+			bool isGrounded = !player->IsInMidair();
+
+			// Determine target amplitudes for each layer
+			float walkTarget = 0.0f;
+			float runTarget = 0.0f;
+			float sprintTarget = 0.0f;
+
+			if (isSprinting && settings->sprintNoise.enabled) {
+				sprintTarget = 1.0f;
+				// Sprint stop mode 1 (Input Release)
+				if (settings->sprintNoiseStopMode == 1 && sprintInputEndedEarly) {
+					sprintTarget = 0.0f;
+				}
+			}
+			if (wasMoving && !isSprinting && isGrounded) {
+				if (wasWalking && settings->walkNoise.enabled) {
+					walkTarget = 1.0f;
+				}
+				if (!wasWalking && settings->runNoise.enabled) {
+					runTarget = 1.0f;
+				}
+			}
+
+			// Ramp each amplitude independently with per-layer blend rates
+			auto rampAmplitude = [a_delta](float& amp, float target, float blendIn, float blendOut) {
+				if (amp < target) {
+					float rate = 3.0f / std::max(0.05f, blendIn);
+					amp = std::min(amp + rate * a_delta, target);
+				} else if (amp > target) {
+					float rate = 3.0f / std::max(0.05f, blendOut);
+					amp = std::max(amp - rate * a_delta, target);
+				}
+			};
+
+			rampAmplitude(walkNoiseAmplitude, walkTarget, settings->walkNoise.blendIn, settings->walkNoise.blendOut);
+			rampAmplitude(runNoiseAmplitude, runTarget, settings->runNoise.blendIn, settings->runNoise.blendOut);
+			rampAmplitude(sprintNoiseAmplitude, sprintTarget, settings->sprintNoise.blendIn, settings->sprintNoise.blendOut);
+
+			// Sprint stop mode 2 (Speed-Based): clamp sprint amplitude to speed ratio
+			if (settings->sprintNoiseStopMode == 2 && sprintTarget == 0.0f && sprintNoiseAmplitude > 0.0f) {
+				sprintNoiseAmplitude = std::min(sprintNoiseAmplitude, sprintSpeedRatio);
+			}
+
+			// Normalize raw amplitudes so layers crossfade instead of stacking.
+			// During transitions, blend-in/out timing can cause the sum to exceed 1.0.
+			float rawSum = walkNoiseAmplitude + runNoiseAmplitude + sprintNoiseAmplitude;
+			float normFactor = (rawSum > 1.0f) ? (1.0f / rawSum) : 1.0f;
+
+			float wA = walkNoiseAmplitude * normFactor * settings->walkNoise.intensity;
+			float rA = runNoiseAmplitude * normFactor * settings->runNoise.intensity;
+			float sA = sprintNoiseAmplitude * normFactor * settings->sprintNoise.intensity;
+			float totalAmp = wA + rA + sA;
+
+			float blendedFreq = settings->sprintNoise.frequency;
+			if (totalAmp > 0.001f) {
+				blendedFreq = (wA * settings->walkNoise.frequency +
+				               rA * settings->runNoise.frequency +
+				               sA * settings->sprintNoise.frequency) / totalAmp;
+			}
+
+			// Advance shared phase
+			float gtm = RE::BSTimer::QGlobalTimeMultiplier();
+			movementNoisePhase += a_delta * blendedFreq * gtm * 2.0f * PI;
+			if (movementNoisePhase > 1000.0f * PI) {
+				movementNoisePhase = std::fmod(movementNoisePhase, 2.0f * PI);
+			}
+
+			if (totalAmp > 0.0001f) {
+				float invTotal = 1.0f / totalAmp;
+
+				// Blend all parameters by weighted amplitude
+				auto blend = [&](float w, float r, float s) -> float {
+					return (wA * w + rA * r + sA * s) * invTotal;
+				};
+
+				float bPosAmpX = blend(settings->walkNoise.posAmpX, settings->runNoise.posAmpX, settings->sprintNoise.posAmpX);
+				float bPosAmpY = blend(settings->walkNoise.posAmpY, settings->runNoise.posAmpY, settings->sprintNoise.posAmpY);
+				float bPosAmpZ = blend(settings->walkNoise.posAmpZ, settings->runNoise.posAmpZ, settings->sprintNoise.posAmpZ);
+				float bRotAmpX = blend(settings->walkNoise.rotAmpX, settings->runNoise.rotAmpX, settings->sprintNoise.rotAmpX);
+				float bRotAmpY = blend(settings->walkNoise.rotAmpY, settings->runNoise.rotAmpY, settings->sprintNoise.rotAmpY);
+				float bRotAmpZ = blend(settings->walkNoise.rotAmpZ, settings->runNoise.rotAmpZ, settings->sprintNoise.rotAmpZ);
+				float bBias    = blend(settings->walkNoise.verticalBias, settings->runNoise.verticalBias, settings->sprintNoise.verticalBias);
+				float bH2      = blend(settings->walkNoise.secondHarmonic, settings->runNoise.secondHarmonic, settings->sprintNoise.secondHarmonic);
+				float bLat     = blend(settings->walkNoise.lateralPhase, settings->runNoise.lateralPhase, settings->sprintNoise.lateralPhase);
+
+				float phase = movementNoisePhase;
+				float latPhase = bLat * PI;
+
+				// Vertical bob with asymmetric bias
+				float vertRaw = std::sin(phase);
+				float vertShaped = vertRaw;
+				if (bBias > 0.001f) {
+					if (vertRaw < 0.0f) {
+						vertShaped = vertRaw * (1.0f + bBias * 0.5f);
+					} else {
+						vertShaped = vertRaw * (1.0f - bBias * 0.3f);
+					}
+				}
+				float vertFinal = vertShaped + std::sin(phase * 2.0f) * bH2;
+
+				// Lateral sway
+				float latFinal = std::sin(phase * 0.5f + latPhase) + std::sin(phase * 1.0f + latPhase) * bH2 * 0.5f;
+
+				// Forward/back bob
+				float fwdFinal = std::sin(phase + PI * 0.25f) + std::sin(phase * 2.0f + PI * 0.25f) * bH2 * 0.4f;
+
+				// Rotation waveforms
+				float pitchRaw = std::sin(phase + PI * 0.1f);
+				float rollRaw  = std::sin(phase * 0.5f + latPhase + PI * 0.3f);
+				float yawRaw   = std::sin(phase * 0.5f + PI * 0.7f);
+
+				movementNoiseOffset.x = latFinal  * bPosAmpX * totalAmp;
+				movementNoiseOffset.y = fwdFinal  * bPosAmpY * totalAmp;
+				movementNoiseOffset.z = vertFinal * bPosAmpZ * totalAmp;
+
+				movementNoiseRotation.x = pitchRaw * bRotAmpX * DEG_TO_RAD * totalAmp;
+				movementNoiseRotation.y = rollRaw  * bRotAmpY * DEG_TO_RAD * totalAmp;
+				movementNoiseRotation.z = yawRaw   * bRotAmpZ * DEG_TO_RAD * totalAmp;
+			} else {
+				movementNoiseOffset = { 0.0f, 0.0f, 0.0f };
+				movementNoiseRotation = { 0.0f, 0.0f, 0.0f };
+			}
+		}
+
 		// === UPDATE SPRINT EFFECTS (BLUR ONLY — FOV blending moved to ApplyCameraOffset for lower latency) ===
 		{
 			bool hasActiveBlur = std::abs(currentBlurStrength) > 0.001f;
@@ -1434,6 +1698,11 @@ namespace CameraSettle
 			float targetBlurStrength = 0.0f;
 			if (settings->sprintBlurEnabled && isSprinting) {
 				targetBlurStrength = settings->sprintBlurStrength;
+			}
+
+			// Stop mode 2 (Speed-Based): scale blur target by speed ratio during deceleration
+			if (settings->sprintNoiseStopMode == 2 && !isSprinting && currentBlurStrength > 0.001f) {
+				targetBlurStrength = settings->sprintBlurStrength * sprintSpeedRatio;
 			}
 			
 			// Smoothly blend blur strength
@@ -1480,6 +1749,9 @@ namespace CameraSettle
 			}
 			}  // end else (sprint effects active)
 		}
+
+		// === UPDATE LEAN SYSTEM ===
+		Lean::LeanManager::GetSingleton()->Update(a_delta);
 
 		// === UPDATE FALL EFFECT (Mirror's Edge style disorientation) ===
 		// Drives camera shake, audio, and visual IMODs. Outputs are read back
@@ -1545,18 +1817,47 @@ namespace CameraSettle
 		const RE::NiPoint3& fallPos = fallMgr->GetPositionOffset();
 		const RE::NiPoint3& fallRot = fallMgr->GetRotationOffset();
 
-		// Combine all spring offsets + idle noise + fall-effect shake
+		// Combine all spring offsets + idle noise + movement noise + fall-effect shake
 		RE::NiPoint3 totalPosOffset = {
-			movementSpring.positionOffset.x + jumpSpring.positionOffset.x + sneakSpring.positionOffset.x + hitSpring.positionOffset.x + archerySpring.positionOffset.x + idleNoiseOffset.x + fallPos.x,
-			movementSpring.positionOffset.y + jumpSpring.positionOffset.y + sneakSpring.positionOffset.y + hitSpring.positionOffset.y + archerySpring.positionOffset.y + idleNoiseOffset.y + fallPos.y,
-			movementSpring.positionOffset.z + jumpSpring.positionOffset.z + sneakSpring.positionOffset.z + hitSpring.positionOffset.z + archerySpring.positionOffset.z + idleNoiseOffset.z + fallPos.z
+			movementSpring.positionOffset.x + jumpSpring.positionOffset.x + sneakSpring.positionOffset.x + hitSpring.positionOffset.x + archerySpring.positionOffset.x + idleNoiseOffset.x + movementNoiseOffset.x + fallPos.x,
+			movementSpring.positionOffset.y + jumpSpring.positionOffset.y + sneakSpring.positionOffset.y + hitSpring.positionOffset.y + archerySpring.positionOffset.y + idleNoiseOffset.y + movementNoiseOffset.y + fallPos.y,
+			movementSpring.positionOffset.z + jumpSpring.positionOffset.z + sneakSpring.positionOffset.z + hitSpring.positionOffset.z + archerySpring.positionOffset.z + idleNoiseOffset.z + movementNoiseOffset.z + fallPos.z
 		};
 		
 		RE::NiPoint3 totalRotOffset = {
-			movementSpring.rotationOffset.x + jumpSpring.rotationOffset.x + sneakSpring.rotationOffset.x + hitSpring.rotationOffset.x + archerySpring.rotationOffset.x + idleNoiseRotation.x + fallRot.x,
-			movementSpring.rotationOffset.y + jumpSpring.rotationOffset.y + sneakSpring.rotationOffset.y + hitSpring.rotationOffset.y + archerySpring.rotationOffset.y + idleNoiseRotation.y + fallRot.y,
-			movementSpring.rotationOffset.z + jumpSpring.rotationOffset.z + sneakSpring.rotationOffset.z + hitSpring.rotationOffset.z + archerySpring.rotationOffset.z + idleNoiseRotation.z + fallRot.z
+			movementSpring.rotationOffset.x + jumpSpring.rotationOffset.x + sneakSpring.rotationOffset.x + hitSpring.rotationOffset.x + archerySpring.rotationOffset.x + idleNoiseRotation.x + movementNoiseRotation.x + fallRot.x,
+			movementSpring.rotationOffset.y + jumpSpring.rotationOffset.y + sneakSpring.rotationOffset.y + hitSpring.rotationOffset.y + archerySpring.rotationOffset.y + idleNoiseRotation.y + movementNoiseRotation.y + fallRot.y,
+			movementSpring.rotationOffset.z + jumpSpring.rotationOffset.z + sneakSpring.rotationOffset.z + hitSpring.rotationOffset.z + archerySpring.rotationOffset.z + idleNoiseRotation.z + movementNoiseRotation.z + fallRot.z
 		};
+		
+		// === LEAN CAMERA OFFSETS ===
+		// Rotation offsets are applied via post-multiply so they are already in camera-local
+		// space. Position offsets must be rotated into world space because
+		// cameraNode->local.translate is effectively in world coordinates.
+		if (settings->leanEnabled) {
+			auto* leanMgr = Lean::LeanManager::GetSingleton();
+			float leanVal = leanMgr->GetLeanCurrent();
+			if (std::abs(leanVal) > 0.001f) {
+				float intensity = settings->leanIntensity;
+
+				totalRotOffset.y += leanVal * settings->leanRollDegrees * DEG_TO_RAD * intensity;
+				totalRotOffset.z += leanVal * settings->leanYawDegrees * DEG_TO_RAD * intensity;
+
+				auto* camRoot = a_camera->cameraRoot.get();
+				if (camRoot) {
+					const auto& rot = camRoot->world.rotate;
+					RE::NiPoint3 camRight   = { rot.entry[0][0], rot.entry[1][0], rot.entry[2][0] };
+					RE::NiPoint3 camForward = { rot.entry[0][1], rot.entry[1][1], rot.entry[2][1] };
+
+					float lateralAmount = leanVal * settings->leanPosAmount * intensity;
+					float forwardAmount = std::abs(leanVal) * settings->leanForwardAmount * intensity;
+
+					totalPosOffset.x += camRight.x * lateralAmount + camForward.x * forwardAmount;
+					totalPosOffset.y += camRight.y * lateralAmount + camForward.y * forwardAmount;
+					totalPosOffset.z += camRight.z * lateralAmount + camForward.z * forwardAmount;
+				}
+			}
+		}
 		
 		// Blend sprint FOV offset in the camera hook for lowest latency.
 		// Combines IsSprinting() with early input detection to bridge the behavior graph delay.
@@ -1586,6 +1887,11 @@ namespace CameraSettle
 
 					if (sprintingNow && !sprintInputEndedEarly) {
 						targetFovOffset = sprintSettings->sprintFovDelta;
+					}
+
+					// Stop mode 2 (Speed-Based): scale FOV target by speed ratio during deceleration
+					if (sprintSettings->sprintNoiseStopMode == 2 && !sprintingNow && std::abs(currentFovOffset) > 0.01f) {
+						targetFovOffset = sprintSettings->sprintFovDelta * sprintSpeedRatio;
 					}
 				}
 			}
@@ -1696,6 +2002,111 @@ namespace CameraSettle
 		RE::NiUpdateData updateData;
 		updateData.flags = RE::NiUpdateData::Flag::kDirty;
 		cameraNI->Update(updateData);
+		
+		// (1P/3P lean skeleton transforms are deferred to animation-thread hooks)
+	}
+
+	static int s_skelLogThrottle = 0;
+
+	static const char* kSpineNodeNames[] = {
+		"NPC Spine [Spn0]",
+		"NPC Spine1 [Spn1]",
+		"NPC Spine2 [Spn2]"
+	};
+
+	// Frame-gen safe: apply 1P skeleton lean BEFORE the engine's Update() call
+	void CameraSettleManager::ApplyLean1P(RE::NiAVObject* a_fpObject)
+	{
+		auto* settings = Settings::GetSingleton();
+		if (!settings->leanEnabled || !settings->leanFirstPersonEnabled || !a_fpObject) return;
+
+		auto* leanMgr = Lean::LeanManager::GetSingleton();
+		float leanVal = leanMgr->GetLeanCurrent();
+		if (std::abs(leanVal) < 0.001f) return;
+
+		int nodeIdx = std::clamp(settings->leanFirstPersonNode, 0, 2);
+		auto* spineObj = a_fpObject->GetObjectByName(kSpineNodeNames[nodeIdx]);
+		// Fallback through other spine bones if the selected one doesn't exist
+		if (!spineObj) {
+			for (int i = 2; i >= 0; --i) {
+				spineObj = a_fpObject->GetObjectByName(kSpineNodeNames[i]);
+				if (spineObj) break;
+			}
+		}
+		if (!spineObj) {
+			if (settings->debugLogging && s_skelLogThrottle == 0)
+				logger::warn("[Lean] 1P: No spine bone found on fpObject");
+			return;
+		}
+
+		auto* spineNode = spineObj->AsNode();
+		if (!spineNode) return;
+
+		float intensity = settings->leanIntensity * settings->leanFirstPersonScale;
+		float rollAngle = leanVal * settings->leanRollDegrees * DEG_TO_RAD * intensity;
+		float lateralShift = leanVal * settings->leanPosAmount * intensity * 0.3f;
+
+		RE::NiMatrix3 leanRot = EulerToMatrix(0.0f, rollAngle, 0.0f);
+		spineNode->local.rotate = spineNode->local.rotate * leanRot;
+		spineNode->local.translate.x += lateralShift;
+
+		if (settings->debugLogging && s_skelLogThrottle == 0)
+			logger::info("[Lean] 1P applied: lean={:.3f} roll={:.3f}deg shift={:.2f} bone={}",
+				leanVal, rollAngle * RAD_TO_DEG, lateralShift, spineObj->name.c_str());
+	}
+
+	// Frame-gen safe: apply 3P skeleton lean BEFORE the engine's Update() call
+	// Uses local-space roll (around bone's forward/Y axis) distributed across spine bones.
+	void CameraSettleManager::ApplyLean3P(RE::NiAVObject* a_tpObject)
+	{
+		auto* settings = Settings::GetSingleton();
+		if (!settings->leanEnabled || !settings->leanThirdPersonEnabled || !a_tpObject) return;
+
+		auto* leanMgr = Lean::LeanManager::GetSingleton();
+		float leanVal = leanMgr->GetLeanCurrent();
+		if (std::abs(leanVal) < 0.001f) return;
+
+		float totalRoll = leanVal * settings->leanRollDegrees * DEG_TO_RAD *
+		                  settings->leanIntensity * settings->leanThirdPersonScale;
+		float perBone = totalRoll / 3.0f;
+
+		const char* spineNames[] = {
+			"NPC Spine [Spn0]",
+			"NPC Spine1 [Spn1]",
+			"NPC Spine2 [Spn2]"
+		};
+
+		int bonesModified = 0;
+		for (const char* name : spineNames) {
+			auto* obj = a_tpObject->GetObjectByName(name);
+			if (!obj) continue;
+			auto* node = obj->AsNode();
+			if (!node) continue;
+
+			// Roll around the bone's local Y axis (forward in Skyrim skeleton convention)
+			RE::NiMatrix3 rollMat = EulerToMatrix(0.0f, perBone, 0.0f);
+			node->local.rotate = node->local.rotate * rollMat;
+			bonesModified++;
+		}
+
+		// Lateral translation on the lowest spine
+		auto* spine0 = a_tpObject->GetObjectByName("NPC Spine [Spn0]");
+		if (spine0) {
+			auto* s0node = spine0->AsNode();
+			if (s0node) {
+				float latShift = leanVal * settings->leanPosAmount *
+				                 settings->leanIntensity * settings->leanThirdPersonScale * 0.5f;
+				// Local X is the bone's lateral axis
+				s0node->local.translate.x += latShift;
+			}
+		}
+
+		if (settings->debugLogging && s_skelLogThrottle == 0)
+			logger::info("[Lean] 3P applied: lean={:.3f} totalRoll={:.3f}deg perBone={:.3f}deg bones={} obj={}",
+				leanVal, totalRoll * RAD_TO_DEG, perBone * RAD_TO_DEG, bonesModified,
+				a_tpObject->name.c_str());
+
+		s_skelLogThrottle = (s_skelLogThrottle + 1) % 60;
 	}
 	
 	void CameraSettleManager::Reset()
@@ -1764,6 +2175,18 @@ namespace CameraSettle
 		archeryDrawActive = false;
 		archeryReleaseTimer = 0.0f;
 		
+		// Reset movement noise state (keep phase for smooth re-entry)
+		walkNoiseAmplitude = 0.0f;
+		runNoiseAmplitude = 0.0f;
+		sprintNoiseAmplitude = 0.0f;
+		movementNoiseOffset = { 0.0f, 0.0f, 0.0f };
+		movementNoiseRotation = { 0.0f, 0.0f, 0.0f };
+		
+		// Reset speed tracking (keep reference speed — it's learned over time)
+		hasLastPlayerPos = false;
+		playerWorldSpeed = 0.0f;
+		sprintSpeedRatio = 0.0f;
+		
 		// Reset sprint effects state - undo our FOV contribution
 		if (std::abs(lastAppliedFovOffset) > 0.001f) {
 			auto* camera = RE::PlayerCamera::GetSingleton();
@@ -1793,6 +2216,9 @@ namespace CameraSettle
 		
 		// Reset fall effect (stops audio + IMOD, clears phase)
 		FallEffect::FallEffectManager::GetSingleton()->Reset();
+		
+		// Reset lean state
+		Lean::LeanManager::GetSingleton()->Reset();
 		
 		// Don't reset animEventRegistered - it persists across resets
 		
@@ -1899,8 +2325,54 @@ namespace CameraSettle
 
 			static inline REL::Relocation<decltype(OnCameraUpdate)> _originalCameraUpdate;
 		};
+
+		// Animation-thread hook for first-person skeleton (frame-gen safe)
+		class UpdateFirstPersonHook
+		{
+		public:
+			static void Install()
+			{
+				auto& trampoline = SKSE::GetTrampoline();
+				REL::Relocation<std::uintptr_t> hook{ RELOCATION_ID(39446, 40522) };
+				logger::info("[FPCameraSettle] UpdateFirstPerson hook base: {:X}, offset 0xD7", hook.address());
+				_originalFunc = trampoline.write_call<5>(hook.address() + 0xD7, OnFirstPersonUpdate);
+				logger::info("[FPCameraSettle] UpdateFirstPerson hook installed (frame-gen safe)");
+			}
+
+		private:
+			static void OnFirstPersonUpdate(RE::NiAVObject* a_fpObject, RE::NiUpdateData* a_updateData)
+			{
+				CameraSettleManager::GetSingleton()->ApplyLean1P(a_fpObject);
+				_originalFunc(a_fpObject, a_updateData);
+			}
+
+			static inline REL::Relocation<decltype(OnFirstPersonUpdate)> _originalFunc;
+		};
+
+		// Animation-thread hook for third-person skeleton (frame-gen safe)
+		class UpdateThirdPersonHook
+		{
+		public:
+			static void Install()
+			{
+				auto& trampoline = SKSE::GetTrampoline();
+				REL::Relocation<std::uintptr_t> hook{ RELOCATION_ID(39446, 40522) };
+				logger::info("[FPCameraSettle] UpdateThirdPerson hook base: {:X}, offset 0x94", hook.address());
+				_originalFunc = trampoline.write_call<5>(hook.address() + 0x94, OnThirdPersonUpdate);
+				logger::info("[FPCameraSettle] UpdateThirdPerson hook installed (frame-gen safe)");
+			}
+
+		private:
+			static void OnThirdPersonUpdate(RE::NiAVObject* a_tpObject, RE::NiUpdateData* a_updateData)
+			{
+				CameraSettleManager::GetSingleton()->ApplyLean3P(a_tpObject);
+				_originalFunc(a_tpObject, a_updateData);
+			}
+
+			static inline REL::Relocation<decltype(OnThirdPersonUpdate)> _originalFunc;
+		};
 	}
-	
+
 	// Initialize the IMOD for sprint blur effect
 	// Uses the GetHit IMOD (0x162) which has proper radial blur setup
 	void InitializeSprintBlurIMOD()
@@ -1982,12 +2454,15 @@ namespace CameraSettle
 
 	void Install()
 	{
-		// Allocate trampoline space
-		SKSE::GetTrampoline().create(64);
+		// Allocate trampoline space (main update + camera update + projectile launch + 1P/3P anim)
+		SKSE::GetTrampoline().create(192);
 		
 		// Install hooks
 		Hook::MainUpdateHook::Install();
 		Hook::CameraUpdateHook::Install();
+		Hook::UpdateFirstPersonHook::Install();
+		Hook::UpdateThirdPersonHook::Install();
+		Lean::InstallProjectileHook();
 		
 		// Initialize sprint blur IMOD
 		InitializeSprintBlurIMOD();

@@ -862,6 +862,8 @@ namespace FallEffect
 		wasBlocked = false;
 		lowVelocityTime = 0.0f;
 		peakPhase = Phase::Inactive;
+		landedByBlock = false;
+		blockCooldown = 0.0f;
 		positionOffset = { 0.0f, 0.0f, 0.0f };
 		rotationOffset = { 0.0f, 0.0f, 0.0f };
 		fovOffset = 0.0f;
@@ -965,6 +967,7 @@ namespace FallEffect
 		(void)a_delta;
 		if (!a_player || !a_settings) return false;
 		if (IsBlockingState(a_player)) return false;
+		if (blockCooldown > 0.0f) return false;
 
 		// Must be in air for the effect to start
 		if (!a_player->IsInMidair()) return false;
@@ -1026,7 +1029,8 @@ namespace FallEffect
 		// then fades out on landing. Uses the global fade curve.
 		float phaseEnv = 0.0f;
 		if (currentPhase == Phase::Landing) {
-			float ft = Clamp01(landingTime / 0.25f);
+			float fadeDur = landedByBlock ? 0.15f : 0.25f;
+			float ft = Clamp01(landingTime / fadeDur);
 			phaseEnv = 1.0f - SmoothStep(ft);
 		} else {
 			float fadeIn = std::max(0.01f, settings->fallShakeFadeIn);
@@ -1047,7 +1051,8 @@ namespace FallEffect
 		}
 
 		// Advance phases (continuous, never resets, smooth blend in/out)
-		shakePhase += a_delta * settings->fallShakeFrequency * 2.0f * PI;
+		float gtm = RE::BSTimer::QGlobalTimeMultiplier();
+		shakePhase += a_delta * settings->fallShakeFrequency * gtm * 2.0f * PI;
 		if (shakePhase > 1000.0f * PI) {
 			shakePhase = std::fmod(shakePhase, 2.0f * PI);
 		}
@@ -1103,10 +1108,11 @@ namespace FallEffect
 
 		// === FOV oscillation (Phase 3 only by default; ramp out on landing) ===
 		if (settings->fallFovEnabled && (currentPhase == Phase::Phase3 || currentPhase == Phase::Landing)) {
-			fovPhase += a_delta * settings->fallFovOscFrequency * 2.0f * PI;
+			fovPhase += a_delta * settings->fallFovOscFrequency * gtm * 2.0f * PI;
 			if (fovPhase > 1000.0f * PI) fovPhase = std::fmod(fovPhase, 2.0f * PI);
+			float fovFade = landedByBlock ? 0.2f : 0.4f;
 			float fovEnv = (currentPhase == Phase::Landing)
-				? Clamp01(1.0f - landingTime / 0.4f)
+				? Clamp01(1.0f - landingTime / fovFade)
 				: 1.0f;
 			fovOffset = std::sin(fovPhase) * settings->fallFovOscAmplitude * fovEnv * velScale;
 		}
@@ -1163,7 +1169,8 @@ namespace FallEffect
 		float velGateMin = settings->fallTriggerVelocity * 0.25f;
 		bool descendingFast = (estVelZ > velGateMin);
 
-		// Detect blocked→unblocked transitions (paraglider deactivated mid-air)
+		// Detect blocked→unblocked transitions (paraglider deactivated mid-air).
+		// Full reset with refractory cooldown: the player must fall fresh.
 		if (wasBlocked && !blocked && isInAir) {
 			fallTime = 0.0f;
 			shakePhase = 0.0f;
@@ -1171,14 +1178,31 @@ namespace FallEffect
 			lowVelocityTime = 0.0f;
 			estVelZ = 0.0f;
 			hadValidPrevZ = false;
-			if (currentPhase != Phase::Inactive && currentPhase != Phase::Landing &&
-				currentPhase != Phase::FatalLanding)
-			{
+			landingTime = 0.0f;
+			peakPhase = Phase::Inactive;
+			intensity01 = 0.0f;
+			positionOffset = { 0.0f, 0.0f, 0.0f };
+			rotationOffset = { 0.0f, 0.0f, 0.0f };
+			fovOffset = 0.0f;
+			blockCooldown = settings->fallTriggerTime;
+			if (currentPhase != Phase::FatalLanding) {
+				if (audioFading || windPlaying || whinePlaying) {
+					StopWind(true);
+					StopWhine(true);
+					audioFading = false;
+					fadeProgress = 0.0f;
+				}
+				ApplyIMODStrengths(0.0f, 0.0f);
 				currentPhase = Phase::Inactive;
 			}
 			if (settings->debugLogging) {
-				logger::info("[FPCameraSettle][Fall] Blocked->unblocked in air: reset fallTime");
+				logger::info("[FPCameraSettle][Fall] Blocked->unblocked in air: full reset, cooldown={:.2f}s", blockCooldown);
 			}
+		}
+
+		// Tick down refractory cooldown
+		if (blockCooldown > 0.0f) {
+			blockCooldown -= a_delta;
 		}
 
 		if (isInAir && !blocked && descendingFast) {
@@ -1222,13 +1246,14 @@ namespace FallEffect
 			if (shouldLand) {
 				currentPhase = Phase::Landing;
 				landingTime = 0.0f;
+				landedByBlock = blocked || (isInAir && lowVelocityTime > 0.3f);
 				audioFading = true;
 				fadeProgress = 0.0f;
 				fadeStartWindVol = windCurrentVolume;
 				fadeStartWhineVol = whineCurrentVolume;
 				if (settings->debugLogging) {
-					logger::info("[FPCameraSettle][Fall] -> Landing (airTime={:.2f}s, blocked={}, inAir={}, lowVelTime={:.2f})",
-						fallTime, blocked, isInAir, lowVelocityTime);
+					logger::info("[FPCameraSettle][Fall] -> Landing (airTime={:.2f}s, blocked={}, byBlock={}, inAir={}, lowVelTime={:.2f})",
+						fallTime, blocked, landedByBlock, isInAir, lowVelocityTime);
 				}
 			} else {
 				float t1 = settings->fallPhase1Duration;
@@ -1261,6 +1286,15 @@ namespace FallEffect
 					positionOffset = { 0.0f, 0.0f, 0.0f };
 					rotationOffset = { 0.0f, 0.0f, 0.0f };
 					fovOffset = 0.0f;
+					// Full state reset so the fall must build from scratch
+					// (prevents instant re-trigger after paraglider or slow-descent exit)
+					fallTime = 0.0f;
+					estVelZ = 0.0f;
+					hadValidPrevZ = false;
+					lowVelocityTime = 0.0f;
+					peakPhase = Phase::Inactive;
+					intensity01 = 0.0f;
+					blockCooldown = landedByBlock ? settings->fallTriggerTime : 0.0f;
 				}
 			}
 		} else if (currentPhase == Phase::FatalLanding) {
@@ -1409,7 +1443,8 @@ namespace FallEffect
 					}
 				}
 			} else if (currentPhase == Phase::Landing) {
-				float t = Clamp01(landingTime / std::max(0.1f, settings->fallAudioFadeOut * 0.5f));
+				float imodFadeDur = landedByBlock ? 0.15f : std::max(0.1f, settings->fallAudioFadeOut * 0.5f);
+				float t = Clamp01(landingTime / imodFadeDur);
 				float k = 1.0f - SmoothStep(t);
 				dvStrength = lastDoubleVision * k;
 				mbStrength = lastMotionBlur   * k;

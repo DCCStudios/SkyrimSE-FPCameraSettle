@@ -109,6 +109,166 @@ ActionSettings ActionSettings::Blend(const ActionSettings& a, const ActionSettin
 	return result;
 }
 
+// === MovementNoiseSnapshot Load/Save ===
+void MovementNoiseSnapshot::Load(CSimpleIniA& a_ini, const char* a_section)
+{
+	intensity      = static_cast<float>(a_ini.GetDoubleValue(a_section, "fIntensity", intensity));
+	frequency      = static_cast<float>(a_ini.GetDoubleValue(a_section, "fFrequency", frequency));
+	posAmpX        = static_cast<float>(a_ini.GetDoubleValue(a_section, "fPosAmpX", posAmpX));
+	posAmpY        = static_cast<float>(a_ini.GetDoubleValue(a_section, "fPosAmpY", posAmpY));
+	posAmpZ        = static_cast<float>(a_ini.GetDoubleValue(a_section, "fPosAmpZ", posAmpZ));
+	rotAmpX        = static_cast<float>(a_ini.GetDoubleValue(a_section, "fRotAmpX", rotAmpX));
+	rotAmpY        = static_cast<float>(a_ini.GetDoubleValue(a_section, "fRotAmpY", rotAmpY));
+	rotAmpZ        = static_cast<float>(a_ini.GetDoubleValue(a_section, "fRotAmpZ", rotAmpZ));
+	verticalBias   = static_cast<float>(a_ini.GetDoubleValue(a_section, "fVerticalBias", verticalBias));
+	secondHarmonic = static_cast<float>(a_ini.GetDoubleValue(a_section, "fSecondHarmonic", secondHarmonic));
+	lateralPhase   = static_cast<float>(a_ini.GetDoubleValue(a_section, "fLateralPhase", lateralPhase));
+	blendIn        = static_cast<float>(a_ini.GetDoubleValue(a_section, "fBlendIn", blendIn));
+	blendOut       = static_cast<float>(a_ini.GetDoubleValue(a_section, "fBlendOut", blendOut));
+}
+
+void MovementNoiseSnapshot::Save(CSimpleIniA& a_ini, const char* a_section) const
+{
+	a_ini.SetDoubleValue(a_section, "fIntensity", intensity);
+	a_ini.SetDoubleValue(a_section, "fFrequency", frequency);
+	a_ini.SetDoubleValue(a_section, "fPosAmpX", posAmpX);
+	a_ini.SetDoubleValue(a_section, "fPosAmpY", posAmpY);
+	a_ini.SetDoubleValue(a_section, "fPosAmpZ", posAmpZ);
+	a_ini.SetDoubleValue(a_section, "fRotAmpX", rotAmpX);
+	a_ini.SetDoubleValue(a_section, "fRotAmpY", rotAmpY);
+	a_ini.SetDoubleValue(a_section, "fRotAmpZ", rotAmpZ);
+	a_ini.SetDoubleValue(a_section, "fVerticalBias", verticalBias);
+	a_ini.SetDoubleValue(a_section, "fSecondHarmonic", secondHarmonic);
+	a_ini.SetDoubleValue(a_section, "fLateralPhase", lateralPhase);
+	a_ini.SetDoubleValue(a_section, "fBlendIn", blendIn);
+	a_ini.SetDoubleValue(a_section, "fBlendOut", blendOut);
+}
+
+// === MovementNoiseParams Load/Save ===
+void MovementNoiseParams::Load(CSimpleIniA& a_ini, const char* a_section)
+{
+	enabled   = a_ini.GetBoolValue(a_section, "bEnabled", enabled);
+	preset    = static_cast<int>(a_ini.GetLongValue(a_section, "iPreset", preset));
+	preset    = std::clamp(preset, 0, 4);
+	intensity = static_cast<float>(a_ini.GetDoubleValue(a_section, "fIntensity", intensity));
+	intensity = std::clamp(intensity, 0.0f, 3.0f);
+	frequency = static_cast<float>(a_ini.GetDoubleValue(a_section, "fFrequency", frequency));
+	frequency = std::clamp(frequency, 0.5f, 10.0f);
+	blendIn   = static_cast<float>(a_ini.GetDoubleValue(a_section, "fBlendIn", blendIn));
+	blendIn   = std::clamp(blendIn, 0.05f, 2.0f);
+	blendOut  = static_cast<float>(a_ini.GetDoubleValue(a_section, "fBlendOut", blendOut));
+	blendOut  = std::clamp(blendOut, 0.05f, 5.0f);
+
+	posAmpX = static_cast<float>(a_ini.GetDoubleValue(a_section, "fPosAmpX", posAmpX));
+	posAmpY = static_cast<float>(a_ini.GetDoubleValue(a_section, "fPosAmpY", posAmpY));
+	posAmpZ = static_cast<float>(a_ini.GetDoubleValue(a_section, "fPosAmpZ", posAmpZ));
+	rotAmpX = static_cast<float>(a_ini.GetDoubleValue(a_section, "fRotAmpX", rotAmpX));
+	rotAmpY = static_cast<float>(a_ini.GetDoubleValue(a_section, "fRotAmpY", rotAmpY));
+	rotAmpZ = static_cast<float>(a_ini.GetDoubleValue(a_section, "fRotAmpZ", rotAmpZ));
+
+	verticalBias   = static_cast<float>(a_ini.GetDoubleValue(a_section, "fVerticalBias", verticalBias));
+	verticalBias   = std::clamp(verticalBias, 0.0f, 1.0f);
+	secondHarmonic = static_cast<float>(a_ini.GetDoubleValue(a_section, "fSecondHarmonic", secondHarmonic));
+	secondHarmonic = std::clamp(secondHarmonic, 0.0f, 1.0f);
+	lateralPhase   = static_cast<float>(a_ini.GetDoubleValue(a_section, "fLateralPhase", lateralPhase));
+	lateralPhase   = std::clamp(lateralPhase, 0.0f, 1.0f);
+
+	// Load custom snapshot from companion section (e.g. "WalkNoise_Custom")
+	std::string snapSection = std::string(a_section) + "_Custom";
+	customSnapshot.Load(a_ini, snapSection.c_str());
+}
+
+void MovementNoiseParams::Save(CSimpleIniA& a_ini, const char* a_section) const
+{
+	a_ini.SetBoolValue(a_section, "bEnabled", enabled);
+	a_ini.SetLongValue(a_section, "iPreset", preset);
+	a_ini.SetDoubleValue(a_section, "fIntensity", intensity);
+	a_ini.SetDoubleValue(a_section, "fFrequency", frequency);
+	a_ini.SetDoubleValue(a_section, "fBlendIn", blendIn);
+	a_ini.SetDoubleValue(a_section, "fBlendOut", blendOut);
+	a_ini.SetDoubleValue(a_section, "fPosAmpX", posAmpX);
+	a_ini.SetDoubleValue(a_section, "fPosAmpY", posAmpY);
+	a_ini.SetDoubleValue(a_section, "fPosAmpZ", posAmpZ);
+	a_ini.SetDoubleValue(a_section, "fRotAmpX", rotAmpX);
+	a_ini.SetDoubleValue(a_section, "fRotAmpY", rotAmpY);
+	a_ini.SetDoubleValue(a_section, "fRotAmpZ", rotAmpZ);
+	a_ini.SetDoubleValue(a_section, "fVerticalBias", verticalBias);
+	a_ini.SetDoubleValue(a_section, "fSecondHarmonic", secondHarmonic);
+	a_ini.SetDoubleValue(a_section, "fLateralPhase", lateralPhase);
+
+	std::string snapSection = std::string(a_section) + "_Custom";
+	customSnapshot.Save(a_ini, snapSection.c_str());
+}
+
+void MovementNoiseParams::SaveToCustom()
+{
+	customSnapshot.intensity      = intensity;
+	customSnapshot.frequency      = frequency;
+	customSnapshot.posAmpX        = posAmpX;
+	customSnapshot.posAmpY        = posAmpY;
+	customSnapshot.posAmpZ        = posAmpZ;
+	customSnapshot.rotAmpX        = rotAmpX;
+	customSnapshot.rotAmpY        = rotAmpY;
+	customSnapshot.rotAmpZ        = rotAmpZ;
+	customSnapshot.verticalBias   = verticalBias;
+	customSnapshot.secondHarmonic = secondHarmonic;
+	customSnapshot.lateralPhase   = lateralPhase;
+	customSnapshot.blendIn        = blendIn;
+	customSnapshot.blendOut       = blendOut;
+}
+
+void MovementNoiseParams::LoadFromCustom()
+{
+	intensity      = customSnapshot.intensity;
+	frequency      = customSnapshot.frequency;
+	posAmpX        = customSnapshot.posAmpX;
+	posAmpY        = customSnapshot.posAmpY;
+	posAmpZ        = customSnapshot.posAmpZ;
+	rotAmpX        = customSnapshot.rotAmpX;
+	rotAmpY        = customSnapshot.rotAmpY;
+	rotAmpZ        = customSnapshot.rotAmpZ;
+	verticalBias   = customSnapshot.verticalBias;
+	secondHarmonic = customSnapshot.secondHarmonic;
+	lateralPhase   = customSnapshot.lateralPhase;
+	blendIn        = customSnapshot.blendIn;
+	blendOut       = customSnapshot.blendOut;
+}
+
+bool MovementNoiseParams::DiffersFromSnapshot() const
+{
+	constexpr float EPS = 0.0001f;
+	return std::abs(intensity - customSnapshot.intensity) > EPS ||
+	       std::abs(frequency - customSnapshot.frequency) > EPS ||
+	       std::abs(posAmpX - customSnapshot.posAmpX) > EPS ||
+	       std::abs(posAmpY - customSnapshot.posAmpY) > EPS ||
+	       std::abs(posAmpZ - customSnapshot.posAmpZ) > EPS ||
+	       std::abs(rotAmpX - customSnapshot.rotAmpX) > EPS ||
+	       std::abs(rotAmpY - customSnapshot.rotAmpY) > EPS ||
+	       std::abs(rotAmpZ - customSnapshot.rotAmpZ) > EPS ||
+	       std::abs(verticalBias - customSnapshot.verticalBias) > EPS ||
+	       std::abs(secondHarmonic - customSnapshot.secondHarmonic) > EPS ||
+	       std::abs(lateralPhase - customSnapshot.lateralPhase) > EPS ||
+	       std::abs(blendIn - customSnapshot.blendIn) > EPS ||
+	       std::abs(blendOut - customSnapshot.blendOut) > EPS;
+}
+
+void MovementNoiseParams::CopyTunablesFrom(const MovementNoiseParams& other)
+{
+	intensity      = other.intensity;
+	frequency      = other.frequency;
+	posAmpX        = other.posAmpX;
+	posAmpY        = other.posAmpY;
+	posAmpZ        = other.posAmpZ;
+	rotAmpX        = other.rotAmpX;
+	rotAmpY        = other.rotAmpY;
+	rotAmpZ        = other.rotAmpZ;
+	verticalBias   = other.verticalBias;
+	secondHarmonic = other.secondHarmonic;
+	lateralPhase   = other.lateralPhase;
+	blendIn        = other.blendIn;
+	blendOut       = other.blendOut;
+}
+
 const char* Settings::GetActionName(ActionType a_type)
 {
 	int idx = static_cast<int>(a_type);
@@ -318,6 +478,60 @@ void Settings::InitializeDefaults()
 	initSneakRun(sneakRunLeftDrawn, -1.0f, 0.0f);
 	initSneakRun(sneakRunRightDrawn, 1.0f, 0.0f);
 	
+	// Walk noise defaults (gentle breathing-like sway)
+	walkNoise.enabled = false;
+	walkNoise.preset = 1;
+	walkNoise.intensity = 1.0f;
+	walkNoise.frequency = 1.6f;
+	walkNoise.posAmpX = 0.008f;
+	walkNoise.posAmpY = 0.003f;
+	walkNoise.posAmpZ = 0.015f;
+	walkNoise.rotAmpX = 0.1f;
+	walkNoise.rotAmpY = 0.08f;
+	walkNoise.rotAmpZ = 0.04f;
+	walkNoise.verticalBias = 0.3f;
+	walkNoise.secondHarmonic = 0.1f;
+	walkNoise.lateralPhase = 0.5f;
+	walkNoise.blendIn = 0.5f;
+	walkNoise.blendOut = 0.8f;
+	walkNoise.SaveToCustom();
+	
+	// Run noise defaults (moderate footfall)
+	runNoise.enabled = false;
+	runNoise.preset = 1;
+	runNoise.intensity = 1.0f;
+	runNoise.frequency = 2.2f;
+	runNoise.posAmpX = 0.02f;
+	runNoise.posAmpY = 0.006f;
+	runNoise.posAmpZ = 0.035f;
+	runNoise.rotAmpX = 0.2f;
+	runNoise.rotAmpY = 0.15f;
+	runNoise.rotAmpZ = 0.08f;
+	runNoise.verticalBias = 0.5f;
+	runNoise.secondHarmonic = 0.2f;
+	runNoise.lateralPhase = 0.5f;
+	runNoise.blendIn = 0.4f;
+	runNoise.blendOut = 0.7f;
+	runNoise.SaveToCustom();
+	
+	// Sprint noise defaults (Natural preset values)
+	sprintNoise.enabled = true;
+	sprintNoise.preset = 1;
+	sprintNoise.intensity = 1.0f;
+	sprintNoise.frequency = 2.8f;
+	sprintNoise.posAmpX = 0.04f;
+	sprintNoise.posAmpY = 0.01f;
+	sprintNoise.posAmpZ = 0.06f;
+	sprintNoise.rotAmpX = 0.4f;
+	sprintNoise.rotAmpY = 0.3f;
+	sprintNoise.rotAmpZ = 0.15f;
+	sprintNoise.verticalBias = 0.6f;
+	sprintNoise.secondHarmonic = 0.3f;
+	sprintNoise.lateralPhase = 0.5f;
+	sprintNoise.blendIn = 0.3f;
+	sprintNoise.blendOut = 0.8f;
+	sprintNoise.SaveToCustom();
+	
 	// Initialize sheathed versions (same as drawn but will be scaled by weaponSheathedMult)
 	walkForwardSheathed = walkForwardDrawn;
 	walkBackwardSheathed = walkBackwardDrawn;
@@ -432,6 +646,16 @@ void Settings::Load()
 	sprintBlurRampDown = static_cast<float>(ini.GetDoubleValue("SprintEffects", "fBlurRampDown", sprintBlurRampDown));
 	sprintBlurRadius = static_cast<float>(ini.GetDoubleValue("SprintEffects", "fBlurRadius", sprintBlurRadius));
 
+	// Load movement noise layers (walk, run, sprint)
+	// Migration: if old flat [SprintNoise] has iStopMode but no [WalkNoise] section,
+	// this is a pre-update INI — sprint values are read from [SprintNoise] as before,
+	// walk/run get their InitializeDefaults() values.
+	walkNoise.Load(ini, "WalkNoise");
+	runNoise.Load(ini, "RunNoise");
+	sprintNoise.Load(ini, "SprintNoise");
+	sprintNoiseStopMode = static_cast<int>(ini.GetLongValue("SprintNoise", "iStopMode", sprintNoiseStopMode));
+	sprintNoiseStopMode = std::clamp(sprintNoiseStopMode, 0, 2);
+
 	// Load FOV punch settings
 	fovPunchHitEnabled = ini.GetBoolValue("FOVPunch", "bHitEnabled", fovPunchHitEnabled);
 	fovPunchArrowEnabled = ini.GetBoolValue("FOVPunch", "bArrowEnabled", fovPunchArrowEnabled);
@@ -514,6 +738,56 @@ void Settings::Load()
 	fallFatalWhineBoost    = std::clamp(fallFatalWhineBoost,    0.0f, 10.0f);
 	fallFatalWhineDecay    = std::clamp(fallFatalWhineDecay,    0.1f, 5.0f);
 	fallFatalImpactVolume  = std::clamp(fallFatalImpactVolume,  0.0f, 5.0f);
+
+	// Load lean settings
+	leanEnabled = ini.GetBoolValue("Lean", "bEnabled", leanEnabled);
+	leanIntensity = static_cast<float>(ini.GetDoubleValue("Lean", "fIntensity", leanIntensity));
+	leanIntensity = std::clamp(leanIntensity, 0.0f, 5.0f);
+
+	leanManualEnabled = ini.GetBoolValue("Lean", "bManualEnabled", leanManualEnabled);
+	leanManualMode = static_cast<int>(ini.GetLongValue("Lean", "iManualMode", leanManualMode));
+	leanManualMode = std::clamp(leanManualMode, 0, 1);
+	leanLeftScancode = static_cast<int>(ini.GetLongValue("Lean", "iLeftScancode", leanLeftScancode));
+	leanRightScancode = static_cast<int>(ini.GetLongValue("Lean", "iRightScancode", leanRightScancode));
+
+	leanContextualEnabled = ini.GetBoolValue("Lean_Contextual", "bEnabled", leanContextualEnabled);
+	leanContextualGamepadOnly = ini.GetBoolValue("Lean_Contextual", "bGamepadOnly", leanContextualGamepadOnly);
+	leanContextualDistance = static_cast<float>(ini.GetDoubleValue("Lean_Contextual", "fDistance", leanContextualDistance));
+	leanContextualDistance = std::clamp(leanContextualDistance, 10.0f, 500.0f);
+	leanContextualOffset = static_cast<float>(ini.GetDoubleValue("Lean_Contextual", "fOffset", leanContextualOffset));
+	leanContextualOffset = std::clamp(leanContextualOffset, 5.0f, 100.0f);
+	leanContextualDeadzone = static_cast<float>(ini.GetDoubleValue("Lean_Contextual", "fDeadzone", leanContextualDeadzone));
+	leanContextualDeadzone = std::clamp(leanContextualDeadzone, 0.0f, 0.5f);
+	leanContextualBow = ini.GetBoolValue("Lean_Contextual", "bBow", leanContextualBow);
+	leanContextualCrossbow = ini.GetBoolValue("Lean_Contextual", "bCrossbow", leanContextualCrossbow);
+	leanContextualMagic = ini.GetBoolValue("Lean_Contextual", "bMagic", leanContextualMagic);
+	leanContextualHoldTime = static_cast<float>(ini.GetDoubleValue("Lean_Contextual", "fHoldTime",
+		ini.GetDoubleValue("Lean_Contextual", "fMagicHoldTime", leanContextualHoldTime)));
+	leanContextualHoldTime = std::clamp(leanContextualHoldTime, 0.0f, 3.0f);
+
+	leanPosAmount = static_cast<float>(ini.GetDoubleValue("Lean_Camera", "fPosAmount", leanPosAmount));
+	leanPosAmount = std::clamp(leanPosAmount, 0.0f, 30.0f);
+	leanRollDegrees = static_cast<float>(ini.GetDoubleValue("Lean_Camera", "fRollDegrees", leanRollDegrees));
+	leanRollDegrees = std::clamp(leanRollDegrees, 0.0f, 30.0f);
+	leanYawDegrees = static_cast<float>(ini.GetDoubleValue("Lean_Camera", "fYawDegrees", leanYawDegrees));
+	leanYawDegrees = std::clamp(leanYawDegrees, 0.0f, 15.0f);
+	leanForwardAmount = static_cast<float>(ini.GetDoubleValue("Lean_Camera", "fForwardAmount", leanForwardAmount));
+	leanForwardAmount = std::clamp(leanForwardAmount, 0.0f, 20.0f);
+
+	leanBlendSpeed = static_cast<float>(ini.GetDoubleValue("Lean", "fBlendSpeed", leanBlendSpeed));
+	leanBlendSpeed = std::clamp(leanBlendSpeed, 1.0f, 20.0f);
+	leanReturnSpeed = static_cast<float>(ini.GetDoubleValue("Lean", "fReturnSpeed", leanReturnSpeed));
+	leanReturnSpeed = std::clamp(leanReturnSpeed, 1.0f, 20.0f);
+
+	leanFirstPersonEnabled = ini.GetBoolValue("Lean_1P", "bEnabled", leanFirstPersonEnabled);
+	leanFirstPersonScale = static_cast<float>(ini.GetDoubleValue("Lean_1P", "fScale", leanFirstPersonScale));
+	leanFirstPersonScale = std::clamp(leanFirstPersonScale, 0.0f, 3.0f);
+	leanFirstPersonNode = static_cast<int>(ini.GetLongValue("Lean_1P", "iNode", leanFirstPersonNode));
+	leanFirstPersonNode = std::clamp(leanFirstPersonNode, 0, 2);
+
+	leanThirdPersonEnabled = ini.GetBoolValue("Lean_3P", "bEnabled", leanThirdPersonEnabled);
+	leanThirdPersonScale = static_cast<float>(ini.GetDoubleValue("Lean_3P", "fScale", leanThirdPersonScale));
+	leanThirdPersonScale = std::clamp(leanThirdPersonScale, 0.0f, 3.0f);
 
 	// Load debug settings
 	debugLogging = ini.GetBoolValue("Debug", "bDebugLogging", debugLogging);
@@ -660,6 +934,12 @@ void Settings::Save()
 	ini.SetDoubleValue("SprintEffects", "fBlurRampDown", sprintBlurRampDown, "; IMOD ramp down time in seconds (how fast blur fades)");
 	ini.SetDoubleValue("SprintEffects", "fBlurRadius", sprintBlurRadius, "; Blur start radius (0 = blur from center, 1 = edges only)");
 
+	// Movement noise layers (walk, run, sprint) + custom snapshots
+	walkNoise.Save(ini, "WalkNoise");
+	runNoise.Save(ini, "RunNoise");
+	sprintNoise.Save(ini, "SprintNoise");
+	ini.SetLongValue("SprintNoise", "iStopMode", sprintNoiseStopMode, "; Stop detection: 0=Sprint State, 1=Input Release, 2=Speed-Based");
+
 	// FOV punch settings
 	ini.SetBoolValue("FOVPunch", "bHitEnabled", fovPunchHitEnabled, "; Enable FOV punch when taking a hit");
 	ini.SetBoolValue("FOVPunch", "bArrowEnabled", fovPunchArrowEnabled, "; Enable FOV punch on arrow/bolt release");
@@ -719,6 +999,38 @@ void Settings::Save()
 	ini.SetDoubleValue("FallEffect_Fatal", "fWhineBoost", fallFatalWhineBoost, "; Whine volume spike on impact (multiplier of configured max)");
 	ini.SetDoubleValue("FallEffect_Fatal", "fWhineDecay", fallFatalWhineDecay, "; How long the whine spike takes to decay (seconds)");
 	ini.SetDoubleValue("FallEffect_Fatal", "fImpactVolume", fallFatalImpactVolume, "; Impact body-slam sound volume (0-5; >1.0 amplifies)");
+
+	// Lean settings
+	ini.SetBoolValue("Lean", "bEnabled", leanEnabled, "; Master toggle for leaning system");
+	ini.SetDoubleValue("Lean", "fIntensity", leanIntensity, "; Master lean intensity multiplier");
+	ini.SetBoolValue("Lean", "bManualEnabled", leanManualEnabled, "; Enable manual lean via keyboard");
+	ini.SetLongValue("Lean", "iManualMode", leanManualMode, "; 0=Hold, 1=Toggle");
+	ini.SetLongValue("Lean", "iLeftScancode", leanLeftScancode, "; Lean left key scancode (0x10 = Q)");
+	ini.SetLongValue("Lean", "iRightScancode", leanRightScancode, "; Lean right key scancode (0x12 = E)");
+	ini.SetDoubleValue("Lean", "fBlendSpeed", leanBlendSpeed, "; How fast lean blends in");
+	ini.SetDoubleValue("Lean", "fReturnSpeed", leanReturnSpeed, "; How fast lean returns to center");
+
+	ini.SetBoolValue("Lean_Contextual", "bEnabled", leanContextualEnabled, "; Enable automatic lean near walls during ranged combat");
+	ini.SetBoolValue("Lean_Contextual", "bGamepadOnly", leanContextualGamepadOnly, "; Only activate contextual lean when using a gamepad");
+	ini.SetDoubleValue("Lean_Contextual", "fDistance", leanContextualDistance, "; Max raycast distance for wall detection");
+	ini.SetDoubleValue("Lean_Contextual", "fOffset", leanContextualOffset, "; Shoulder offset for ray origins");
+	ini.SetDoubleValue("Lean_Contextual", "fDeadzone", leanContextualDeadzone, "; Minimum proximity ratio to trigger lean");
+	ini.SetBoolValue("Lean_Contextual", "bBow", leanContextualBow, "; Contextual lean while drawing bow");
+	ini.SetBoolValue("Lean_Contextual", "bCrossbow", leanContextualCrossbow, "; Contextual lean while aiming crossbow");
+	ini.SetBoolValue("Lean_Contextual", "bMagic", leanContextualMagic, "; Contextual lean while casting spells");
+	ini.SetDoubleValue("Lean_Contextual", "fHoldTime", leanContextualHoldTime, "; Seconds to hold lean after firing/casting ends");
+
+	ini.SetDoubleValue("Lean_Camera", "fPosAmount", leanPosAmount, "; Lateral camera shift (units)");
+	ini.SetDoubleValue("Lean_Camera", "fRollDegrees", leanRollDegrees, "; Head tilt roll (degrees)");
+	ini.SetDoubleValue("Lean_Camera", "fYawDegrees", leanYawDegrees, "; Look-around yaw (degrees)");
+	ini.SetDoubleValue("Lean_Camera", "fForwardAmount", leanForwardAmount, "; Forward peek (units)");
+
+	ini.SetBoolValue("Lean_1P", "bEnabled", leanFirstPersonEnabled, "; Apply lean to first-person skeleton");
+	ini.SetDoubleValue("Lean_1P", "fScale", leanFirstPersonScale, "; First-person lean scale");
+	ini.SetLongValue("Lean_1P", "iNode", leanFirstPersonNode, "; Spine node: 0=Spine, 1=Spine1, 2=Spine2");
+
+	ini.SetBoolValue("Lean_3P", "bEnabled", leanThirdPersonEnabled, "; Apply lean to third-person body");
+	ini.SetDoubleValue("Lean_3P", "fScale", leanThirdPersonScale, "; Third-person lean scale");
 
 	// Debug settings
 	ini.SetBoolValue("Debug", "bDebugLogging", debugLogging, "; Enable detailed debug logging");

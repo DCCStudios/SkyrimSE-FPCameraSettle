@@ -1,9 +1,234 @@
 #include "Menu.h"
 #include "CameraSettle.h"
 #include "FallEffect.h"
+#include "Lean.h"
+#include <Windows.h>
+#include <Xinput.h>
+
+#pragma comment(lib, "xinput.lib")
 
 namespace Menu
 {
+	// -------------------------------------------------------------------
+	// Win32 key polling for keybind capture (BSInputDeviceManager doesn't
+	// fire when SKSE Menu Framework is active)
+	// -------------------------------------------------------------------
+	static bool s_prevKeyState[256] = {};
+	static bool s_prevMouseState[5] = {};
+	static WORD s_prevGamepadButtons = 0;
+
+	// Maps XInput button mask to our gamepad encoding (266+)
+	static int XInputButtonToEncoded(WORD a_button)
+	{
+		static const std::pair<WORD, int> mapping[] = {
+			{ XINPUT_GAMEPAD_DPAD_UP,        266 },
+			{ XINPUT_GAMEPAD_DPAD_DOWN,       267 },
+			{ XINPUT_GAMEPAD_DPAD_LEFT,       268 },
+			{ XINPUT_GAMEPAD_DPAD_RIGHT,      269 },
+			{ XINPUT_GAMEPAD_START,            270 },
+			{ XINPUT_GAMEPAD_BACK,             271 },
+			{ XINPUT_GAMEPAD_LEFT_THUMB,       272 },
+			{ XINPUT_GAMEPAD_RIGHT_THUMB,      273 },
+			{ XINPUT_GAMEPAD_LEFT_SHOULDER,    274 },
+			{ XINPUT_GAMEPAD_RIGHT_SHOULDER,   275 },
+			{ XINPUT_GAMEPAD_A,                276 },
+			{ XINPUT_GAMEPAD_B,                277 },
+			{ XINPUT_GAMEPAD_X,                278 },
+			{ XINPUT_GAMEPAD_Y,                279 },
+		};
+		for (auto& [mask, enc] : mapping) {
+			if (a_button & mask) return enc;
+		}
+		return -1;
+	}
+
+	// VK to DirectInput scancode mapping for common keys
+	static uint32_t VKToDIScancode(int a_vk)
+	{
+		UINT sc = MapVirtualKeyA(static_cast<UINT>(a_vk), MAPVK_VK_TO_VSC);
+		return (sc > 0 && sc < 256) ? sc : 0;
+	}
+
+	// Poll Win32 for a newly-pressed key/button. Returns encoded scancode or -1.
+	static int PollForNewKeyPress()
+	{
+		// Escape check first
+		bool escNow = (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0;
+		if (escNow && !s_prevKeyState[VK_ESCAPE]) {
+			s_prevKeyState[VK_ESCAPE] = true;
+			return 0x01;  // DI scancode for Escape
+		}
+		s_prevKeyState[VK_ESCAPE] = escNow;
+
+		// Keyboard (skip mouse VKs 1-6 and modifier keys that might be held)
+		for (int vk = 0x08; vk < 256; ++vk) {
+			if (vk == VK_ESCAPE) continue;
+			bool now = (GetAsyncKeyState(vk) & 0x8000) != 0;
+			if (now && !s_prevKeyState[vk]) {
+				s_prevKeyState[vk] = true;
+				uint32_t sc = VKToDIScancode(vk);
+				if (sc > 0) return static_cast<int>(sc);
+			}
+			s_prevKeyState[vk] = now;
+		}
+
+		// Mouse buttons
+		static const int mouseVKs[] = { VK_LBUTTON, VK_RBUTTON, VK_MBUTTON, VK_XBUTTON1, VK_XBUTTON2 };
+		for (int i = 0; i < 5; ++i) {
+			bool now = (GetAsyncKeyState(mouseVKs[i]) & 0x8000) != 0;
+			if (now && !s_prevMouseState[i]) {
+				s_prevMouseState[i] = true;
+				return 256 + i;
+			}
+			s_prevMouseState[i] = now;
+		}
+
+		// Gamepad
+		XINPUT_STATE xstate{};
+		if (XInputGetState(0, &xstate) == ERROR_SUCCESS) {
+			WORD buttons = xstate.Gamepad.wButtons;
+			WORD newButtons = buttons & ~s_prevGamepadButtons;
+			s_prevGamepadButtons = buttons;
+			if (newButtons) {
+				int enc = XInputButtonToEncoded(newButtons);
+				if (enc >= 0) return enc;
+			}
+		} else {
+			s_prevGamepadButtons = 0;
+		}
+
+		return -1;
+	}
+
+	// -------------------------------------------------------------------
+	// Key name lookup for encoded scancodes
+	// Keyboard: 0-255, Mouse: 256-265, Gamepad: 266+
+	// -------------------------------------------------------------------
+	const char* GetKeyName(int a_encoded)
+	{
+		if (a_encoded < 0) return "None";
+
+		// Mouse buttons (256+)
+		if (a_encoded >= 256 && a_encoded < 266) {
+			static const char* mouseNames[] = {
+				"Mouse Left", "Mouse Right", "Mouse Middle",
+				"Mouse 4", "Mouse 5", "Mouse 6",
+				"Mouse 7", "Mouse 8", "Scroll Up", "Scroll Down"
+			};
+			int idx = a_encoded - 256;
+			if (idx < 10) return mouseNames[idx];
+			static char mbuf[32];
+			snprintf(mbuf, sizeof(mbuf), "Mouse %d", idx);
+			return mbuf;
+		}
+
+		// Gamepad buttons (266+)
+		if (a_encoded >= 266) {
+			static const char* gpNames[] = {
+				"Gamepad Up", "Gamepad Down", "Gamepad Left", "Gamepad Right",
+				"Gamepad Start", "Gamepad Back",
+				"Gamepad L Thumb", "Gamepad R Thumb",
+				"Gamepad LB", "Gamepad RB",
+				"Gamepad A", "Gamepad B", "Gamepad X", "Gamepad Y"
+			};
+			int idx = a_encoded - 266;
+			if (idx < 14) return gpNames[idx];
+			static char gbuf[32];
+			snprintf(gbuf, sizeof(gbuf), "Gamepad %d", idx);
+			return gbuf;
+		}
+
+		// Keyboard scancodes (0-255)
+		static const char* keyNames[] = {
+			"None",        "Escape",     "1",          "2",          "3",          "4",          "5",          "6",         // 0x00-0x07
+			"7",           "8",          "9",          "0",          "-",          "=",          "Backspace",  "Tab",       // 0x08-0x0F
+			"Q",           "W",          "E",          "R",          "T",          "Y",          "U",          "I",         // 0x10-0x17
+			"O",           "P",          "[",          "]",          "Enter",      "Left Ctrl",  "A",          "S",         // 0x18-0x1F
+			"D",           "F",          "G",          "H",          "J",          "K",          "L",          ";",         // 0x20-0x27
+			"'",           "`",          "Left Shift", "\\",         "Z",          "X",          "C",          "V",         // 0x28-0x2F
+			"B",           "N",          "M",          ",",          ".",          "/",          "Right Shift","Num *",     // 0x30-0x37
+			"Left Alt",    "Space",      "Caps Lock",  "F1",         "F2",         "F3",         "F4",         "F5",        // 0x38-0x3F
+			"F6",          "F7",         "F8",         "F9",         "F10",        "Num Lock",   "Scroll Lock","Num 7",     // 0x40-0x47
+			"Num 8",       "Num 9",      "Num -",      "Num 4",      "Num 5",      "Num 6",      "Num +",      "Num 1",     // 0x48-0x4F
+			"Num 2",       "Num 3",      "Num 0",      "Num .",      nullptr,      nullptr,      nullptr,      "F11",       // 0x50-0x57
+			"F12"                                                                                                            // 0x58
+		};
+		constexpr int numKeys = sizeof(keyNames) / sizeof(keyNames[0]);
+
+		if (a_encoded < numKeys && keyNames[a_encoded]) {
+			return keyNames[a_encoded];
+		}
+
+		// Extended keys
+		switch (a_encoded) {
+		case 0x9C: return "Num Enter";
+		case 0x9D: return "Right Ctrl";
+		case 0xB5: return "Num /";
+		case 0xB8: return "Right Alt";
+		case 0xC7: return "Home";
+		case 0xC8: return "Up Arrow";
+		case 0xC9: return "Page Up";
+		case 0xCB: return "Left Arrow";
+		case 0xCD: return "Right Arrow";
+		case 0xCF: return "End";
+		case 0xD0: return "Down Arrow";
+		case 0xD1: return "Page Down";
+		case 0xD2: return "Insert";
+		case 0xD3: return "Delete";
+		default: break;
+		}
+
+		static char kbuf[32];
+		snprintf(kbuf, sizeof(kbuf), "Key 0x%02X", a_encoded);
+		return kbuf;
+	}
+
+	const char* CheckKeyConflict(int a_encoded)
+	{
+		auto* controlMap = RE::ControlMap::GetSingleton();
+		if (!controlMap) return nullptr;
+
+		RE::INPUT_DEVICE device = RE::INPUT_DEVICE::kKeyboard;
+		uint32_t idCode = static_cast<uint32_t>(a_encoded);
+		if (a_encoded >= 266) {
+			device = RE::INPUT_DEVICE::kGamepad;
+			idCode = a_encoded - 266;
+		} else if (a_encoded >= 256) {
+			device = RE::INPUT_DEVICE::kMouse;
+			idCode = a_encoded - 256;
+		}
+
+		auto* userEvents = RE::UserEvents::GetSingleton();
+		if (!userEvents) return nullptr;
+
+		struct ActionCheck { const RE::BSFixedString* eventName; const char* displayName; };
+		ActionCheck checks[] = {
+			{ &userEvents->forward,       "Forward" },
+			{ &userEvents->back,          "Back" },
+			{ &userEvents->strafeLeft,    "Strafe Left" },
+			{ &userEvents->strafeRight,   "Strafe Right" },
+			{ &userEvents->activate,      "Activate" },
+			{ &userEvents->jump,          "Jump" },
+			{ &userEvents->sprint,        "Sprint" },
+			{ &userEvents->sneak,         "Sneak" },
+			{ &userEvents->readyWeapon,   "Ready Weapon" },
+			{ &userEvents->rightAttack,   "Right Attack" },
+			{ &userEvents->leftAttack,    "Left Attack" },
+			{ &userEvents->shout,         "Shout" },
+			{ &userEvents->togglePOV,     "Toggle POV" },
+		};
+
+		for (auto& check : checks) {
+			if (!check.eventName || check.eventName->empty()) continue;
+			uint32_t mapped = controlMap->GetMappedKey(*check.eventName, device);
+			if (mapped == idCode) {
+				return check.displayName;
+			}
+		}
+
+		return nullptr;
+	}
+
 	void Register()
 	{
 		if (!SKSEMenuFramework::IsInstalled()) {
@@ -66,8 +291,10 @@ namespace Menu
 		DrawSettlingSettings();
 		DrawIdleNoiseSettings();
 		DrawSprintEffectsSettings();
+		DrawMovementNoiseSettings();
 		DrawFovPunchSettings();
 		DrawFallEffectSettings();
+		DrawLeanSettings();
 		DrawDebugSettings();
 		
 		ImGui::Separator();
@@ -619,6 +846,323 @@ namespace Menu
 		}
 	}
 
+	// Layer type enum for preset application
+	enum class NoiseLayer { Walk = 0, Run, Sprint };
+
+	static void ApplyMovementNoisePreset(MovementNoiseParams& params, int preset, NoiseLayer layer)
+	{
+		if (preset == 0) {
+			params.LoadFromCustom();
+			return;
+		}
+
+		// Scale factors relative to sprint (sprint = 1.0)
+		struct LayerScale { float freq; float pos; float rot; float bias; float h2; };
+		static const LayerScale scales[] = {
+			{ 0.0f, 0.0f, 0.0f, 0.0f, 0.0f },  // placeholder
+			{ 1.0f, 1.0f, 1.0f, 1.0f, 1.0f },  // sprint
+		};
+
+		// Base values per preset (sprint reference)
+		struct PresetBase {
+			float freq, posX, posY, posZ, rotX, rotY, rotZ, bias, h2, lat;
+		};
+		static const PresetBase presets[] = {
+			{},  // 0 = Custom (handled above)
+			{ 2.8f, 0.04f,  0.01f,  0.06f,  0.4f,  0.3f,  0.15f, 0.6f, 0.3f,  0.5f },  // Natural
+			{ 3.0f, 0.015f, 0.005f, 0.025f, 0.15f, 0.1f,  0.06f, 0.3f, 0.15f, 0.5f },  // Subtle
+			{ 2.5f, 0.06f,  0.02f,  0.09f,  0.7f,  0.5f,  0.25f, 0.7f, 0.4f,  0.5f },  // Cinematic
+			{ 2.2f, 0.08f,  0.03f,  0.12f,  1.0f,  0.7f,  0.35f, 0.8f, 0.5f,  0.5f },  // Heavy
+		};
+
+		// Per-layer multipliers relative to sprint preset values
+		struct LayerMult { float freq; float pos; float rot; float bias; float h2; };
+		static const LayerMult layerMult[] = {
+			{ 0.571f, 0.25f, 0.25f, 0.5f, 0.333f },  // Walk  (e.g. 1.6/2.8, 0.008/0.04 etc.)
+			{ 0.786f, 0.50f, 0.50f, 0.833f, 0.667f }, // Run
+			{ 1.0f,   1.0f,  1.0f,  1.0f,  1.0f },    // Sprint
+		};
+
+		int li = static_cast<int>(layer);
+		const auto& p = presets[preset];
+		const auto& m = layerMult[li];
+
+		params.frequency      = p.freq * m.freq;
+		params.posAmpX        = p.posX * m.pos;
+		params.posAmpY        = p.posY * m.pos;
+		params.posAmpZ        = p.posZ * m.pos;
+		params.rotAmpX        = p.rotX * m.rot;
+		params.rotAmpY        = p.rotY * m.rot;
+		params.rotAmpZ        = p.rotZ * m.rot;
+		params.verticalBias   = p.bias * m.bias;
+		params.secondHarmonic = p.h2   * m.h2;
+		params.lateralPhase   = p.lat;
+	}
+
+	// Draw one movement noise subsection (walk, run, or sprint)
+	static void DrawNoiseLayerUI(const char* label, MovementNoiseParams& params, NoiseLayer layer,
+	                              Settings* settings, bool showStopMode)
+	{
+		const char* presetNames[] = { "Custom", "Natural", "Subtle", "Cinematic", "Heavy" };
+
+		// Build the preset display label with unsaved indicator
+		char presetLabel[32];
+		if (params.preset == 0 && params.DiffersFromSnapshot()) {
+			snprintf(presetLabel, sizeof(presetLabel), "Custom*");
+		} else {
+			snprintf(presetLabel, sizeof(presetLabel), "%s", presetNames[params.preset]);
+		}
+
+		if (CheckboxWithTooltip(fmt::format("Enable##{}", label).c_str(), &params.enabled,
+			"Enable rhythmic camera noise for this movement type.")) {
+			MarkSettingsChanged();
+		}
+
+		ImGui::Spacing();
+
+		// Preset row
+		ImGui::Text("Preset:");
+		ImGui::SameLine();
+		ImGui::SetNextItemWidth(150.0f);
+
+		// Custom combo with asterisk support
+		if (ImGui::BeginCombo(fmt::format("##Preset{}", label).c_str(), presetLabel)) {
+			for (int i = 0; i < 5; ++i) {
+				const char* displayName = presetNames[i];
+				char itemLabel[32];
+				if (i == 0 && params.DiffersFromSnapshot()) {
+					snprintf(itemLabel, sizeof(itemLabel), "Custom*");
+					displayName = itemLabel;
+				}
+				bool isSelected = (params.preset == i);
+				if (ImGui::Selectable(displayName, isSelected)) {
+					params.preset = i;
+					ApplyMovementNoisePreset(params, i, layer);
+					MarkSettingsChanged();
+				}
+				if (isSelected) ImGui::SetItemDefaultFocus();
+			}
+			ImGui::EndCombo();
+		}
+		if (ImGui::IsItemHovered()) {
+			ImGui::SetTooltip(
+				"Select a preset or use Custom for manual settings.\n\n"
+				"Natural: Realistic motion (default)\n"
+				"Subtle: Barely perceptible\n"
+				"Cinematic: Pronounced movement\n"
+				"Heavy: Strong, weighty motion\n"
+				"Custom: Your saved custom values\n"
+				"Custom*: Unsaved changes (use Save to Custom)");
+		}
+
+		ImGui::SameLine();
+		if (ImGui::Button(fmt::format("Save to Custom##{}", label).c_str())) {
+			params.SaveToCustom();
+			params.preset = 0;
+			MarkSettingsChanged();
+			Settings::GetSingleton()->Save();
+			State::hasUnsavedChanges = false;
+		}
+		if (ImGui::IsItemHovered()) {
+			ImGui::SetTooltip("Save current slider values as your Custom preset.\n"
+				"These values persist across sessions.");
+		}
+
+		ImGui::Spacing();
+
+		// Global sliders
+		if (SliderFloatWithTooltip(fmt::format("Intensity##{}", label).c_str(), &params.intensity, 0.0f, 3.0f, "%.2f",
+			"Master intensity multiplier.")) {
+			params.preset = 0;
+			MarkSettingsChanged();
+		}
+		if (SliderFloatWithTooltip(fmt::format("Frequency##{}", label).c_str(), &params.frequency, 0.5f, 10.0f, "%.1f Hz",
+			"Rhythm frequency (footfall cadence).")) {
+			params.preset = 0;
+			MarkSettingsChanged();
+		}
+		if (SliderFloatWithTooltip(fmt::format("Blend In##{}", label).c_str(), &params.blendIn, 0.05f, 2.0f, "%.2f sec",
+			"How long to ramp the noise in.")) {
+			MarkSettingsChanged();
+		}
+		if (SliderFloatWithTooltip(fmt::format("Blend Out##{}", label).c_str(), &params.blendOut, 0.05f, 5.0f, "%.2f sec",
+			"How long to fade the noise out.")) {
+			MarkSettingsChanged();
+		}
+
+		// Stop mode (sprint only)
+		if (showStopMode) {
+			static const char* stopModeNames[] = { "Sprint State", "Input Release", "Speed-Based" };
+			if (ImGui::Combo(fmt::format("Stop Mode##{}", label).c_str(), &settings->sprintNoiseStopMode, stopModeNames, 3)) {
+				MarkSettingsChanged();
+			}
+			if (ImGui::IsItemHovered()) {
+				ImGui::SetTooltip(
+					"How to detect when to start the noise blend-out.\n\n"
+					"Sprint State: Wait for sprint state to end.\n"
+					"Input Release: Start fading on sprint key release.\n"
+					"Speed-Based: Fade proportionally to deceleration.");
+			}
+		}
+
+		ImGui::Spacing();
+
+		// Position amplitudes
+		ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.2f, 0.35f, 0.2f, 0.6f));
+		if (ImGui::TreeNode(fmt::format("Position Amplitude##{}", label).c_str())) {
+			ImGui::PopStyleColor();
+			if (SliderFloatWithTooltip(fmt::format("X - Lateral Sway##{}", label).c_str(), &params.posAmpX, 0.0f, 0.3f, "%.3f",
+				"Side-to-side sway amplitude.")) {
+				params.preset = 0; MarkSettingsChanged();
+			}
+			if (SliderFloatWithTooltip(fmt::format("Y - Forward/Back##{}", label).c_str(), &params.posAmpY, 0.0f, 0.2f, "%.3f",
+				"Forward/backward bob amplitude.")) {
+				params.preset = 0; MarkSettingsChanged();
+			}
+			if (SliderFloatWithTooltip(fmt::format("Z - Vertical Bob##{}", label).c_str(), &params.posAmpZ, 0.0f, 0.3f, "%.3f",
+				"Up/down bob amplitude.")) {
+				params.preset = 0; MarkSettingsChanged();
+			}
+			ImGui::TreePop();
+		} else {
+			ImGui::PopStyleColor();
+		}
+
+		// Rotation amplitudes
+		ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.2f, 0.2f, 0.35f, 0.6f));
+		if (ImGui::TreeNode(fmt::format("Rotation Amplitude (degrees)##{}", label).c_str())) {
+			ImGui::PopStyleColor();
+			if (SliderFloatWithTooltip(fmt::format("Pitch (Nod)##{}", label).c_str(), &params.rotAmpX, 0.0f, 3.0f, "%.2f",
+				"Head nod up/down with each stride.")) {
+				params.preset = 0; MarkSettingsChanged();
+			}
+			if (SliderFloatWithTooltip(fmt::format("Roll (Tilt)##{}", label).c_str(), &params.rotAmpY, 0.0f, 3.0f, "%.2f",
+				"Head tilt left/right with each stride.")) {
+				params.preset = 0; MarkSettingsChanged();
+			}
+			if (SliderFloatWithTooltip(fmt::format("Yaw (Look)##{}", label).c_str(), &params.rotAmpZ, 0.0f, 2.0f, "%.2f",
+				"Subtle left/right look with each stride.")) {
+				params.preset = 0; MarkSettingsChanged();
+			}
+			ImGui::TreePop();
+		} else {
+			ImGui::PopStyleColor();
+		}
+
+		// Rhythm shape
+		ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.35f, 0.25f, 0.2f, 0.6f));
+		if (ImGui::TreeNode(fmt::format("Rhythm Shape##{}", label).c_str())) {
+			ImGui::PopStyleColor();
+			if (SliderFloatWithTooltip(fmt::format("Vertical Bias##{}", label).c_str(), &params.verticalBias, 0.0f, 1.0f, "%.2f",
+				"0 = symmetric sine, 1 = sharp-down/soft-up (impact feel).")) {
+				params.preset = 0; MarkSettingsChanged();
+			}
+			if (SliderFloatWithTooltip(fmt::format("Second Harmonic##{}", label).c_str(), &params.secondHarmonic, 0.0f, 1.0f, "%.2f",
+				"Double-frequency overtone amount (0-1).")) {
+				params.preset = 0; MarkSettingsChanged();
+			}
+			if (SliderFloatWithTooltip(fmt::format("Lateral Phase##{}", label).c_str(), &params.lateralPhase, 0.0f, 1.0f, "%.2f",
+				"0.5 = alternating left/right per stride (natural).")) {
+				params.preset = 0; MarkSettingsChanged();
+			}
+			ImGui::TreePop();
+		} else {
+			ImGui::PopStyleColor();
+		}
+
+		// Copy Settings From
+		ImGui::Spacing();
+		const char* copyFromNames[] = { "Walking", "Running", "Sprinting" };
+		int copyFromIdx = -1;
+		ImGui::SetNextItemWidth(150.0f);
+		if (ImGui::BeginCombo(fmt::format("Copy Settings From##{}", label).c_str(), "Select...")) {
+			for (int i = 0; i < 3; ++i) {
+				if (static_cast<int>(layer) == i) continue;
+				if (ImGui::Selectable(copyFromNames[i], false)) {
+					copyFromIdx = i;
+				}
+			}
+			ImGui::EndCombo();
+		}
+		if (ImGui::IsItemHovered()) {
+			ImGui::SetTooltip("Copy all tunable parameters from another movement layer.");
+		}
+		if (copyFromIdx >= 0) {
+			MovementNoiseParams* source = nullptr;
+			switch (copyFromIdx) {
+			case 0: source = &settings->walkNoise; break;
+			case 1: source = &settings->runNoise; break;
+			case 2: source = &settings->sprintNoise; break;
+			}
+			if (source) {
+				params.CopyTunablesFrom(*source);
+				params.preset = 0;
+				MarkSettingsChanged();
+			}
+		}
+	}
+
+	void DrawMovementNoiseSettings()
+	{
+		auto* settings = Settings::GetSingleton();
+		
+		if (ImGui::CollapsingHeader("Movement Camera Noise", State::movementNoiseExpanded ? ImGuiTreeNodeFlags_DefaultOpen : 0)) {
+			State::movementNoiseExpanded = true;
+			
+			ImGui::TextWrapped("Rhythmic camera movement (head bob/sway) for walking, running, and sprinting. Each layer crossfades smoothly during movement transitions.");
+			ImGui::Spacing();
+			
+			ImGui::BeginDisabled(!State::editMode);
+
+			// === WALKING ===
+			ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.2f, 0.35f, 0.25f, 0.6f));
+			if (ImGui::CollapsingHeader("Walking##MovNoise", State::walkNoiseExpanded ? ImGuiTreeNodeFlags_DefaultOpen : 0)) {
+				State::walkNoiseExpanded = true;
+				ImGui::PopStyleColor();
+				ImGui::Indent(8.0f);
+				DrawNoiseLayerUI("WalkNoise", settings->walkNoise, NoiseLayer::Walk, settings, false);
+				ImGui::Unindent(8.0f);
+			} else {
+				State::walkNoiseExpanded = false;
+				ImGui::PopStyleColor();
+			}
+
+			ImGui::Spacing();
+
+			// === RUNNING ===
+			ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.25f, 0.3f, 0.4f, 0.6f));
+			if (ImGui::CollapsingHeader("Running##MovNoise", State::runNoiseExpanded ? ImGuiTreeNodeFlags_DefaultOpen : 0)) {
+				State::runNoiseExpanded = true;
+				ImGui::PopStyleColor();
+				ImGui::Indent(8.0f);
+				DrawNoiseLayerUI("RunNoise", settings->runNoise, NoiseLayer::Run, settings, false);
+				ImGui::Unindent(8.0f);
+			} else {
+				State::runNoiseExpanded = false;
+				ImGui::PopStyleColor();
+			}
+
+			ImGui::Spacing();
+
+			// === SPRINTING ===
+			ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.4f, 0.25f, 0.2f, 0.6f));
+			if (ImGui::CollapsingHeader("Sprinting##MovNoise", State::sprintNoiseExpanded ? ImGuiTreeNodeFlags_DefaultOpen : 0)) {
+				State::sprintNoiseExpanded = true;
+				ImGui::PopStyleColor();
+				ImGui::Indent(8.0f);
+				DrawNoiseLayerUI("SprintNoise", settings->sprintNoise, NoiseLayer::Sprint, settings, true);
+				ImGui::Unindent(8.0f);
+			} else {
+				State::sprintNoiseExpanded = false;
+				ImGui::PopStyleColor();
+			}
+
+			ImGui::EndDisabled();
+		} else {
+			State::movementNoiseExpanded = false;
+		}
+	}
+
 	void DrawFovPunchSettings()
 	{
 		auto* settings = Settings::GetSingleton();
@@ -961,13 +1505,17 @@ namespace Menu
 				ImGui::PopStyleColor();
 			}
 			
-			// === FATAL LANDING ===
-			ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.5f, 0.15f, 0.15f, 0.6f));
+			// === FATAL LANDING (greyed out - under development) ===
+			ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.3f, 0.3f, 0.3f, 0.4f));
+			ImGui::BeginDisabled(true);
 			if (ImGui::TreeNode("Fatal Landing (Death Slam)##FallFatal")) {
 				ImGui::PopStyleColor();
+				ImGui::EndDisabled();
 				
-				ImGui::TextWrapped("Mirror's Edge-style slam and fade when the player dies from a fall. Cuts wind, spikes the whine, plays an impact sound, and fades to black.");
+				ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "This feature is under development.");
 				ImGui::Spacing();
+				
+				ImGui::BeginDisabled(true);
 				
 				if (CheckboxWithTooltip("Enable Fatal Landing##FallFatal", &settings->fallFatalEnabled,
 					"Enable the fatal landing effect when the player dies from fall damage.\n"
@@ -1032,9 +1580,11 @@ namespace Menu
 						"MISSING: Data/SKSE/Plugins/FPCameraSettle/fallingdeathimpact.wav");
 				}
 				
+				ImGui::EndDisabled();
 				ImGui::TreePop();
 			} else {
 				ImGui::PopStyleColor();
+				ImGui::EndDisabled();
 			}
 			
 			ImGui::EndDisabled();
@@ -1060,6 +1610,299 @@ namespace Menu
 		}
 	}
 	
+	void DrawLeanSettings()
+	{
+		auto* settings = Settings::GetSingleton();
+		
+		if (ImGui::CollapsingHeader("Leaning", State::leanExpanded ? ImGuiTreeNodeFlags_DefaultOpen : 0)) {
+			State::leanExpanded = true;
+			
+			ImGui::TextWrapped("Lean around corners manually (keyboard) or automatically during ranged combat near walls.");
+			ImGui::Spacing();
+			
+			ImGui::BeginDisabled(!State::editMode);
+			
+			if (CheckboxWithTooltip("Enable Leaning", &settings->leanEnabled,
+				"Master toggle for the entire leaning system.")) {
+				MarkSettingsChanged();
+			}
+			
+			if (SliderFloatWithTooltip("Intensity##Lean", &settings->leanIntensity, 0.0f, 3.0f, "%.2f",
+				"Master multiplier for lean camera and skeleton offsets.")) {
+				MarkSettingsChanged();
+			}
+			
+			if (SliderFloatWithTooltip("Blend Speed##Lean", &settings->leanBlendSpeed, 1.0f, 20.0f, "%.1f",
+				"How fast the lean blends in when activated.")) {
+				MarkSettingsChanged();
+			}
+			
+			if (SliderFloatWithTooltip("Return Speed##Lean", &settings->leanReturnSpeed, 1.0f, 20.0f, "%.1f",
+				"How fast the lean returns to center when released.")) {
+				MarkSettingsChanged();
+			}
+			
+			// Live status
+			auto* leanMgr = Lean::LeanManager::GetSingleton();
+			const char* sourceName = "None";
+			switch (leanMgr->GetLeanSource()) {
+				case Lean::LeanSource::Manual:     sourceName = "Manual"; break;
+				case Lean::LeanSource::Contextual: sourceName = "Contextual"; break;
+				default: break;
+			}
+			ImGui::TextColored(ImVec4(0.7f, 0.85f, 1.0f, 1.0f),
+				"Lean: %.2f  Source: %s", leanMgr->GetLeanCurrent(), sourceName);
+			
+			ImGui::Spacing();
+			
+			// === MANUAL LEAN ===
+			ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.3f, 0.25f, 0.4f, 0.6f));
+			if (ImGui::TreeNode("Manual Lean")) {
+				ImGui::PopStyleColor();
+				
+				if (CheckboxWithTooltip("Enable Manual Lean", &settings->leanManualEnabled,
+					"Allow leaning with keyboard keys.")) {
+					MarkSettingsChanged();
+				}
+				
+				static const char* modeNames[] = { "Hold", "Toggle" };
+				if (ImGui::Combo("Mode##ManualLean", &settings->leanManualMode, modeNames, 2)) {
+					MarkSettingsChanged();
+				}
+				if (ImGui::IsItemHovered()) {
+					ImGui::SetTooltip(
+						"Hold: Lean while key is held down.\n"
+						"Toggle: Press once to lean, press again to return.");
+				}
+				
+				ImGui::Separator();
+				ImGui::Text("Key Bindings:");
+
+				// Poll Win32 for key capture while listening
+				if (State::listeningForLeanLeft || State::listeningForLeanRight) {
+					int pressed = PollForNewKeyPress();
+					if (pressed >= 0) {
+						if (pressed == 0x01) {
+							State::listeningForLeanLeft = false;
+							State::listeningForLeanRight = false;
+						} else if (State::listeningForLeanLeft) {
+							settings->leanLeftScancode = pressed;
+							State::listeningForLeanLeft = false;
+							MarkSettingsChanged();
+						} else if (State::listeningForLeanRight) {
+							settings->leanRightScancode = pressed;
+							State::listeningForLeanRight = false;
+							MarkSettingsChanged();
+						}
+					}
+				}
+
+				// --- Lean Left ---
+				{
+					const char* leftName = State::listeningForLeanLeft
+						? ">> Press any key... <<"
+						: GetKeyName(settings->leanLeftScancode);
+					ImVec2 tsL; ImGui::CalcTextSize(&tsL, leftName, nullptr, false, -1.0f);
+					float btnWidth = (tsL.x + 20.0f > 140.0f) ? tsL.x + 20.0f : 140.0f;
+					ImGui::Text("Lean Left:");
+					ImGui::SameLine();
+					if (State::listeningForLeanLeft)
+						ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.3f, 0.1f, 0.9f));
+					if (ImGui::Button(fmt::format("{}##LeanLeftBtn", leftName).c_str(), ImVec2(btnWidth, 0))) {
+						State::listeningForLeanLeft = !State::listeningForLeanLeft;
+						State::listeningForLeanRight = false;
+					}
+					if (State::listeningForLeanLeft)
+						ImGui::PopStyleColor();
+					if (ImGui::IsItemHovered()) {
+						ImGui::SetTooltip("Click to bind a new key, then press any key/button.\nPress Escape to cancel.");
+					}
+					const char* conflictL = CheckKeyConflict(settings->leanLeftScancode);
+					if (conflictL) {
+						ImGui::SameLine();
+						ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.2f, 1.0f), "Conflicts with: %s", conflictL);
+					}
+				}
+
+				// --- Lean Right ---
+				{
+					const char* rightName = State::listeningForLeanRight
+						? ">> Press any key... <<"
+						: GetKeyName(settings->leanRightScancode);
+					ImVec2 tsR; ImGui::CalcTextSize(&tsR, rightName, nullptr, false, -1.0f);
+					float btnWidth = (tsR.x + 20.0f > 140.0f) ? tsR.x + 20.0f : 140.0f;
+					ImGui::Text("Lean Right:");
+					ImGui::SameLine();
+					if (State::listeningForLeanRight)
+						ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.3f, 0.1f, 0.9f));
+					if (ImGui::Button(fmt::format("{}##LeanRightBtn", rightName).c_str(), ImVec2(btnWidth, 0))) {
+						State::listeningForLeanRight = !State::listeningForLeanRight;
+						State::listeningForLeanLeft = false;
+					}
+					if (State::listeningForLeanRight)
+						ImGui::PopStyleColor();
+					if (ImGui::IsItemHovered()) {
+						ImGui::SetTooltip("Click to bind a new key, then press any key/button.\nPress Escape to cancel.");
+					}
+					const char* conflictR = CheckKeyConflict(settings->leanRightScancode);
+					if (conflictR) {
+						ImGui::SameLine();
+						ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.2f, 1.0f), "Conflicts with: %s", conflictR);
+					}
+				}
+				
+				ImGui::TreePop();
+			} else {
+				ImGui::PopStyleColor();
+			}
+			
+			ImGui::Spacing();
+			
+			// === CONTEXTUAL LEAN ===
+			ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.25f, 0.35f, 0.3f, 0.6f));
+			if (ImGui::TreeNode("Contextual Lean (Auto)")) {
+				ImGui::PopStyleColor();
+				
+				ImGui::TextWrapped("Automatic lean near walls during ranged combat. Raycasts left and right to detect cover.");
+				ImGui::Spacing();
+				
+				if (CheckboxWithTooltip("Enable Contextual Lean", &settings->leanContextualEnabled,
+					"Automatically lean toward open side when near a wall\n"
+					"while in ranged combat stance (bow/crossbow/magic).")) {
+					MarkSettingsChanged();
+				}
+
+				if (settings->leanContextualEnabled) {
+					if (CheckboxWithTooltip("Gamepad Only##CtxLean", &settings->leanContextualGamepadOnly,
+						"Only activate contextual lean when using a gamepad.\n"
+						"Disables contextual lean when playing with keyboard/mouse.")) {
+						MarkSettingsChanged();
+					}
+				}
+				
+				if (SliderFloatWithTooltip("Detection Distance", &settings->leanContextualDistance, 10.0f, 500.0f, "%.0f units",
+					"Maximum raycast distance for wall detection.")) {
+					MarkSettingsChanged();
+				}
+				if (SliderFloatWithTooltip("Shoulder Offset", &settings->leanContextualOffset, 5.0f, 100.0f, "%.1f units",
+					"Lateral offset from camera for ray origins\n(simulates shoulder width).")) {
+					MarkSettingsChanged();
+				}
+				if (SliderFloatWithTooltip("Deadzone", &settings->leanContextualDeadzone, 0.0f, 0.5f, "%.2f",
+					"Minimum proximity ratio to trigger lean.\nHigher = need to be closer to wall.")) {
+					MarkSettingsChanged();
+				}
+				
+				ImGui::Separator();
+				ImGui::Text("Weapon Types:");
+				
+				if (CheckboxWithTooltip("Bow##CtxLean", &settings->leanContextualBow,
+					"Enable contextual lean while drawing a bow.")) {
+					MarkSettingsChanged();
+				}
+				ImGui::SameLine();
+				if (CheckboxWithTooltip("Crossbow##CtxLean", &settings->leanContextualCrossbow,
+					"Enable contextual lean while aiming a crossbow.")) {
+					MarkSettingsChanged();
+				}
+				ImGui::SameLine();
+				if (CheckboxWithTooltip("Magic##CtxLean", &settings->leanContextualMagic,
+					"Enable contextual lean while casting spells.")) {
+					MarkSettingsChanged();
+				}
+
+				ImGui::Spacing();
+				if (SliderFloatWithTooltip("Hold Time After Fire##CtxLean", &settings->leanContextualHoldTime,
+					0.0f, 3.0f, "%.2f s",
+					"How long the lean persists after firing/casting ends.\n"
+					"Applies to bow, crossbow, and magic alike.")) {
+					MarkSettingsChanged();
+				}
+				
+				ImGui::TreePop();
+			} else {
+				ImGui::PopStyleColor();
+			}
+			
+			ImGui::Spacing();
+			
+			// === CAMERA ===
+			ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.35f, 0.3f, 0.2f, 0.6f));
+			if (ImGui::TreeNode("Camera##Lean")) {
+				ImGui::PopStyleColor();
+				
+				if (SliderFloatWithTooltip("Lateral Shift", &settings->leanPosAmount, 0.0f, 30.0f, "%.1f units",
+					"How far the camera shifts sideways when fully leaned.")) {
+					MarkSettingsChanged();
+				}
+				if (SliderFloatWithTooltip("Roll (Head Tilt)", &settings->leanRollDegrees, 0.0f, 30.0f, "%.1f deg",
+					"Head tilt angle when fully leaned.")) {
+					MarkSettingsChanged();
+				}
+				if (SliderFloatWithTooltip("Yaw (Look Around)", &settings->leanYawDegrees, 0.0f, 15.0f, "%.1f deg",
+					"How much the camera rotates to look around the corner.")) {
+					MarkSettingsChanged();
+				}
+				if (SliderFloatWithTooltip("Forward Peek", &settings->leanForwardAmount, 0.0f, 20.0f, "%.1f units",
+					"How far the camera pushes forward when leaning.")) {
+					MarkSettingsChanged();
+				}
+				
+				ImGui::TreePop();
+			} else {
+				ImGui::PopStyleColor();
+			}
+			
+			ImGui::Spacing();
+			
+			// === SKELETON ===
+			ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.3f, 0.3f, 0.4f, 0.6f));
+			if (ImGui::TreeNode("Skeleton##Lean")) {
+				ImGui::PopStyleColor();
+				
+				ImGui::Text("First Person:");
+				if (CheckboxWithTooltip("Enable 1P Skeleton##Lean", &settings->leanFirstPersonEnabled,
+					"Make first-person arms/weapon follow the lean.")) {
+					MarkSettingsChanged();
+				}
+				if (SliderFloatWithTooltip("1P Scale##Lean", &settings->leanFirstPersonScale, 0.0f, 3.0f, "%.2f",
+					"Scale multiplier for first-person skeleton lean.")) {
+					MarkSettingsChanged();
+				}
+				static const char* spineNodeNames[] = { "NPC Spine [Spn0]", "NPC Spine1 [Spn1]", "NPC Spine2 [Spn2]" };
+				if (ImGui::Combo("1P Lean Bone##Lean", &settings->leanFirstPersonNode, spineNodeNames, 3)) {
+					MarkSettingsChanged();
+				}
+				if (ImGui::IsItemHovered()) {
+					ImGui::SetTooltip(
+						"Which spine bone to apply the 1P lean rotation to.\n"
+						"Spine2: Highest (arms move most, torso stays).\n"
+						"Spine1: Middle.\n"
+						"Spine:  Lowest (whole torso leans).");
+				}
+				
+				ImGui::Separator();
+				ImGui::Text("Third Person:");
+				if (CheckboxWithTooltip("Enable 3P Body##Lean", &settings->leanThirdPersonEnabled,
+					"Apply lean rotation to third-person body spine bones.")) {
+					MarkSettingsChanged();
+				}
+				if (SliderFloatWithTooltip("3P Scale##Lean", &settings->leanThirdPersonScale, 0.0f, 3.0f, "%.2f",
+					"Scale multiplier for third-person body lean.")) {
+					MarkSettingsChanged();
+				}
+				
+				ImGui::TreePop();
+			} else {
+				ImGui::PopStyleColor();
+			}
+			
+			ImGui::EndDisabled();
+		} else {
+			State::leanExpanded = false;
+		}
+	}
+
 	void DrawDebugSettings()
 	{
 		auto* settings = Settings::GetSingleton();

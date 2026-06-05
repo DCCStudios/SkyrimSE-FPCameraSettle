@@ -1,0 +1,158 @@
+[00:00] Hey there, num today we're going to talk
+[00:02] about the most unheard and unpopular
+[00:04] mechanic in FPS games, contextual
+[00:07] leaning. This mechanic is rarely talked
+[00:09] about, so I'm going to be the one
+[00:11] talking about it. Please watch this
+[00:13] video until the end if you want to know
+[00:14] something about this mechanic and hear
+[00:16] what people think about it. Anyways,
+[00:18] let's dive in.
+[00:20] First, we need to learn what leaning is.
+[00:22] Leaning in FPS games is a mechanic where
+[00:25] the player can peek around angles
+[00:26] without fully exposing their body.
+[00:29] Unlike peaking where you either show
+[00:31] half of your body or or your whole body
+[00:33] for a brief moment, leaning allows you
+[00:35] to peek around corners or over obstacles
+[00:37] without stepping fully into the open.
+[00:40] Now there's two types of leaning
+[00:42] depending on the game you're playing.
+[00:43] There is manual leaning and non-manual
+[00:46] leaning, also known as contextual
+[00:47] leaning.
+[00:49] Manual leaning is a type of leaning
+[00:50] mechanic where you get to decide how you
+[00:52] want to lean by pressing Q to lean left
+[00:54] and E to lean right. You'll see it more
+[00:57] commonly on Rainbow Six Siege where
+[00:59] players can lean however they want
+[01:01] without limits. Non-manual leaning, also
+[01:04] known as contextual leaning, is a type
+[01:06] of leaning mechanic where only the game
+[01:08] decides whether you can lean or not.
+[01:10] Unlike manual leaning, you cannot lean
+[01:12] however you want. The game engine must
+[01:15] detect if you meet its criteria. It will
+[01:17] usually check things like, [music]
+[01:19] are you close enough to a corner or a
+[01:22] piece of cover?
+[01:23] Is the angle appropriate? Is there cover
+[01:26] to lean from? Are you not far away from
+[01:29] cover? If all conditions are met, the
+[01:31] game automatically lets you lean when
+[01:33] you ADS, also known as aiming down
+[01:36] sights.
+[01:37] However, if you fail to meet these
+[01:39] conditions, then leaning is not
+[01:41] possible.
+[01:42] To put it simple, manual leaning means
+[01:44] you have full control on how you want to
+[01:47] lean while non-manual leaning means the
+[01:49] game decides the leaning for you. You
+[01:51] don't have full control, only the game.
+[01:54] All right, now you know what the leaning
+[01:56] mechanic is. There's a lot of reasons of
+[01:58] why people don't use it, but I won't
+[02:00] explain all reasons since I don't want
+[02:02] to make the video boring. Let's go to
+[02:04] three points of why contextual leaning
+[02:07] is less popular than manual leaning.
+[02:09] Number one, it's restrictive.
+[02:12] Because the game engine decides when
+[02:14] leaning is allowed, if you try to lean
+[02:16] in your own way like strafing or backing
+[02:19] away a few feet, the game will register
+[02:21] it as an invalid position which cancels
+[02:25] the leaning stance. The game is the one
+[02:27] making the decisions and you have no
+[02:29] control over it. That's why you may see
+[02:31] comments like, "Oh my god, why can't I
+[02:34] strafe while leaning?" or "I can't lean
+[02:36] however I want, it's so strict." That's
+[02:39] where manual leaning comes to the
+[02:40] rescue. Because it's not as restrictive
+[02:42] as contextual leaning, you can
+[02:44] definitely lean however you want, even
+[02:46] lean thin air without needing for cover.
+[02:49] Many people wouldn't want to use a
+[02:50] mechanic that's considered restrictive
+[02:52] and slow to use in engagements. So,
+[02:55] unless they can control it, they would
+[02:57] entirely abandon and prefer peaking
+[02:59] instead. Peaking is quick and efficient
+[03:02] to perform if manual leaning is
+[03:04] non-existent. There are also some people
+[03:06] that say it's inconsistent with
+[03:08] geometry. Sometimes it triggers when you
+[03:10] don't want it and sometimes it refuses
+[03:12] to trigger when you do. Players hate
+[03:14] inconsistency [music]
+[03:15] more than anything. It's not a skill
+[03:17] worth learning for most people. Number
+[03:20] two, it's not well taught. Even in games
+[03:23] like Battlefield 1, if players are never
+[03:25] shown how contextual leaning works or
+[03:27] why it's useful, they'll treat it as
+[03:30] optional rather than a necessary
+[03:32] mechanic in in gunfights. Social media
+[03:35] also plays a role in why it's rarely
+[03:36] used. [music] If contextual leaning
+[03:38] hasn't been a part of the meta for a
+[03:40] long time, people instinctively reject
+[03:42] it because the crowd decides on whether
+[03:44] it works or not. So, even if it does
+[03:47] work and helps win engagements, it won't
+[03:50] be widely accepted as long as the player
+[03:52] base stays silent. However, people can
+[03:54] sometimes underestimate a specific
+[03:56] protect that works because they only
+[03:58] listen to what social media influencers
+[04:00] and a group of people say, not
+[04:02] understanding. So, of course the tip is
+[04:05] going to feel useless to them without
+[04:07] testing it out and practicing. Number
+[04:09] three, people don't know how to use it
+[04:12] effectively. Even when they understand
+[04:14] what it is and what it does, they may
+[04:16] still not know how to use it properly.
+[04:19] That's why they stick to tactics they're
+[04:21] usually familiar with. If they try to
+[04:23] learn at the first time, they will mess
+[04:25] up a few times, which some people may
+[04:27] avoid doing. If they know what picking
+[04:30] is, whether from Valorant or CS:GO, then
+[04:34] the chances of of them relying on
+[04:36] picking tactics instead of leaning are
+[04:38] much higher. Learning how to use
+[04:39] contextual leaning takes a lot of mental
+[04:41] effort and time, which most people
+[04:43] avoid. Let's ask an important question.
+[04:46] Is contextual leaning useless? While it
+[04:49] may seem like it since the game engine
+[04:51] decides whether you can lean or not
+[04:52] instead of you, I'd say that, at least
+[04:54] for me, it isn't useless. It's simply a
+[04:57] situational tactic with its own quirks
+[05:00] and game rules, and it can offer a
+[05:01] significant advantage. Leaning keeps
+[05:04] more of your character's body behind
+[05:05] cover, whereas picking forces you to
+[05:07] step out for a brief moment. It takes
+[05:10] time to master. If you understand how it
+[05:12] works and why it behaves that way, your
+[05:15] chances of winning gunfights will
+[05:17] increase. Now, don't get me wrong. As a
+[05:19] person who mastered contextual leaning
+[05:21] for two whole years, leaning does have
+[05:24] weaknesses. It's slow, methodical,
+[05:26] restrictive, decision-making tax, and it
+[05:29] requires you to understand complex
+[05:31] geometry. If you're low on HP, there's
+[05:34] still a chance you'll die because
+[05:36] leaning does not eliminate your
+[05:38] exposure, only decreases it. So, to put
+[05:41] it simple, leaning is not useless. It
+[05:44] just requires understanding to know when
+[05:46] it's the right to use it.

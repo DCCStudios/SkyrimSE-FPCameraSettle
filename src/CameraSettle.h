@@ -2,6 +2,7 @@
 
 #include "Settings.h"
 #include "PrecisionAPI.h"
+#include "Lean.h"
 
 namespace CameraSettle
 {
@@ -82,6 +83,10 @@ namespace CameraSettle
 		
 		// Apply camera offset (called from camera update hook)
 		void ApplyCameraOffset(RE::PlayerCamera* a_camera);
+
+		// Apply deferred lean skeleton transforms (called from animation hooks)
+		void ApplyLean1P(RE::NiAVObject* a_fpObject);
+		void ApplyLean3P(RE::NiAVObject* a_tpObject);
 		
 		// Reset all springs
 		void Reset();
@@ -229,6 +234,20 @@ namespace CameraSettle
 		bool archeryDrawActive{ false };
 		float archeryReleaseTimer{ 0.0f };
 		
+	// === MOVEMENT NOISE STATE (rhythmic head bob while walk/run/sprint) ===
+	float movementNoisePhase{ 0.0f };             // Shared continuous phase across all layers
+	float walkNoiseAmplitude{ 0.0f };             // Walk layer amplitude (0-1, ramps in/out)
+	float runNoiseAmplitude{ 0.0f };              // Run layer amplitude (0-1, ramps in/out)
+	float sprintNoiseAmplitude{ 0.0f };           // Sprint layer amplitude (0-1, ramps in/out)
+	RE::NiPoint3 movementNoiseOffset{ 0.0f, 0.0f, 0.0f };    // Combined position noise offset
+	RE::NiPoint3 movementNoiseRotation{ 0.0f, 0.0f, 0.0f };  // Combined rotation noise offset
+
+	// Speed-based sprint ramp-down (queried from game data)
+	RE::NiPoint3 lastPlayerPos{};                // Previous frame player position
+	bool hasLastPlayerPos{ false };              // Whether lastPlayerPos is valid
+	float playerWorldSpeed{ 0.0f };              // Smoothed world speed (units/sec)
+	float sprintSpeedRatio{ 0.0f };              // Current speed / sprint speed (0-1), smoothed
+
 	public:
 		// === SPRINT EFFECTS STATE (public for initialization) ===
 		float currentFovOffset{ 0.0f };          // Current FOV offset (blended)

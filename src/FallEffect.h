@@ -134,6 +134,8 @@ namespace FallEffect
 		bool  wasBlocked{ false };     // Previous frame's IsBlockingState result
 		float lowVelocityTime{ 0.0f }; // Time spent below velocity threshold (for paraglider exit)
 		Phase peakPhase{ Phase::Inactive }; // Highest phase reached during current fall
+	bool  landedByBlock{ false };      // True if landing was triggered by a blocking state (e.g. paraglider)
+	float blockCooldown{ 0.0f };       // Refractory period after blocked→unblocked (prevents instant re-trigger)
 
 		// Output offsets (read by camera offset hook)
 		RE::NiPoint3 positionOffset{ 0.0f, 0.0f, 0.0f };

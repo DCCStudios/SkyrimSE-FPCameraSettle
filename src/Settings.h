@@ -59,6 +59,54 @@ struct ActionSettings
 	static ActionSettings Blend(const ActionSettings& a, const ActionSettings& b, float t);
 };
 
+// Saved custom preset snapshot (stores tunable noise parameters)
+struct MovementNoiseSnapshot {
+	float intensity{ 1.0f };
+	float frequency{ 2.0f };
+	float posAmpX{ 0.0f };
+	float posAmpY{ 0.0f };
+	float posAmpZ{ 0.0f };
+	float rotAmpX{ 0.0f };
+	float rotAmpY{ 0.0f };
+	float rotAmpZ{ 0.0f };
+	float verticalBias{ 0.5f };
+	float secondHarmonic{ 0.2f };
+	float lateralPhase{ 0.5f };
+	float blendIn{ 0.4f };
+	float blendOut{ 0.6f };
+
+	void Load(CSimpleIniA& a_ini, const char* a_section);
+	void Save(CSimpleIniA& a_ini, const char* a_section) const;
+};
+
+// Per-layer movement noise parameters (walk, run, sprint each get one)
+struct MovementNoiseParams {
+	bool  enabled{ false };
+	int   preset{ 1 };             // 0=Custom, 1=Natural, 2=Subtle, 3=Cinematic, 4=Heavy
+	float intensity{ 1.0f };
+	float frequency{ 2.8f };
+	float posAmpX{ 0.04f };
+	float posAmpY{ 0.01f };
+	float posAmpZ{ 0.06f };
+	float rotAmpX{ 0.4f };
+	float rotAmpY{ 0.3f };
+	float rotAmpZ{ 0.15f };
+	float verticalBias{ 0.6f };
+	float secondHarmonic{ 0.3f };
+	float lateralPhase{ 0.5f };
+	float blendIn{ 0.3f };
+	float blendOut{ 0.8f };
+
+	MovementNoiseSnapshot customSnapshot;
+
+	void Load(CSimpleIniA& a_ini, const char* a_section);
+	void Save(CSimpleIniA& a_ini, const char* a_section) const;
+	void SaveToCustom();
+	void LoadFromCustom();
+	bool DiffersFromSnapshot() const;
+	void CopyTunablesFrom(const MovementNoiseParams& other);
+};
+
 class Settings
 {
 public:
@@ -168,6 +216,14 @@ public:
 	float sprintBlurRampDown{ 0.2f };         // IMOD ramp down time (seconds) - how fast blur fades out
 	float sprintBlurRadius{ 0.5f };           // Blur start radius (0 = from center, 1 = edges only)
 
+	// === MOVEMENT CAMERA NOISE (rhythmic head bob while moving) ===
+	MovementNoiseParams walkNoise;
+	MovementNoiseParams runNoise;
+	MovementNoiseParams sprintNoise;
+	
+	// Sprint-specific stop detection mode: 0=Sprint State, 1=Input Release, 2=Speed-Based
+	int   sprintNoiseStopMode{ 1 };
+
 	// === FOV PUNCH ===
 	bool  fovPunchHitEnabled{ true };         // Enable FOV punch when taking a hit
 	bool  fovPunchArrowEnabled{ true };       // Enable FOV punch on arrow/bolt release
@@ -238,6 +294,46 @@ public:
 	float fallFatalWhineBoost{ 2.0f };         // Whine volume spike on impact (multiplier of max)
 	float fallFatalWhineDecay{ 1.0f };         // How long the whine spike takes to fade out (seconds)
 	float fallFatalImpactVolume{ 1.0f };       // Volume for the death impact sound (0-5)
+
+	// === LEANING SYSTEM ===
+	bool  leanEnabled{ false };
+	float leanIntensity{ 1.0f };
+
+	// Manual lean
+	bool  leanManualEnabled{ true };
+	int   leanManualMode{ 0 };            // 0=Hold, 1=Toggle
+	int   leanLeftScancode{ 0x10 };       // Q key
+	int   leanRightScancode{ 0x12 };      // E key
+
+	// Contextual lean (raycasting)
+	bool  leanContextualEnabled{ true };
+	bool  leanContextualGamepadOnly{ false };
+	float leanContextualDistance{ 150.0f };
+	float leanContextualOffset{ 30.0f };
+	float leanContextualDeadzone{ 0.1f };
+	bool  leanContextualBow{ true };
+	bool  leanContextualCrossbow{ true };
+	bool  leanContextualMagic{ true };
+	float leanContextualHoldTime{ 0.5f };  // Hold lean briefly after firing/casting ends
+
+	// Camera offsets
+	float leanPosAmount{ 12.0f };
+	float leanRollDegrees{ 10.0f };
+	float leanYawDegrees{ 3.0f };
+	float leanForwardAmount{ 3.0f };
+
+	// Blend speeds
+	float leanBlendSpeed{ 6.0f };
+	float leanReturnSpeed{ 8.0f };
+
+	// First-person skeleton
+	bool  leanFirstPersonEnabled{ true };
+	float leanFirstPersonScale{ 1.0f };
+	int   leanFirstPersonNode{ 2 };       // 0=Spine, 1=Spine1, 2=Spine2
+
+	// Third-person body
+	bool  leanThirdPersonEnabled{ true };
+	float leanThirdPersonScale{ 1.0f };
 
 	// === DEBUG ===
 	bool debugLogging{ false };
