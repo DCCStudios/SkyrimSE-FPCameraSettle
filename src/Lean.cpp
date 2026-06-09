@@ -27,6 +27,7 @@ namespace Lean
 		auto* player = RE::PlayerCharacter::GetSingleton();
 		if (!player) return;
 
+		// Safety watchdog: if we should disable lean, force rapid return to center
 		if (ShouldDisableLean(player)) {
 			if (dbg && leanSource != LeanSource::None) {
 				logger::info("[Lean] ShouldDisableLean → clearing target (was source={})", static_cast<int>(leanSource));
@@ -35,6 +36,22 @@ namespace Lean
 			leanSource = LeanSource::None;
 			toggledLeft = false;
 			toggledRight = false;
+			contextualTarget = 0.0f;
+			contextualRawTarget = 0.0f;
+			contextualDisengageTimer = 0.0f;
+			contextualHoldTimer = 0.0f;
+			contextualWasActive = false;
+
+			// Force rapid return — use 3x return speed to quickly unstick the lean
+			if (std::abs(leanCurrent) > 0.001f) {
+				float safetySpeed = settings->leanReturnSpeed * 3.0f;
+				float blend = std::min(safetySpeed * a_delta, 0.98f);
+				leanCurrent += (0.0f - leanCurrent) * blend;
+				if (std::abs(leanCurrent) < 0.005f) leanCurrent = 0.0f;
+			}
+
+			s_leanLogThrottle = (s_leanLogThrottle + 1) % 60;
+			return;
 		}
 
 		// Contextual lean (only if no manual lean active)
@@ -133,6 +150,8 @@ namespace Lean
 		toggledLeft = false;
 		toggledRight = false;
 		contextualTarget = 0.0f;
+		contextualRawTarget = 0.0f;
+		contextualDisengageTimer = 0.0f;
 		contextualHoldTimer = 0.0f;
 		contextualWasActive = false;
 	}
@@ -148,13 +167,44 @@ namespace Lean
 		if (a_player->IsInMidair()) return true;
 		if (actorState->IsSwimming()) return true;
 		if (a_player->IsOnMount()) return true;
-
 		if (a_player->GetOccupiedFurniture()) return true;
 
-		auto* ui = RE::UI::GetSingleton();
-		if (ui && (ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME) ||
-		           ui->IsMenuOpen(RE::Console::MENU_NAME))) {
+		// Death / ragdoll / killmove
+		if (a_player->IsDead()) return true;
+		if (a_player->IsInKillMove()) return true;
+
+		// Stagger / knockdown via behavior graph
+		bool isStaggering = false;
+		a_player->GetGraphVariableBool("IsStaggering", isStaggering);
+		if (isStaggering) return true;
+
+		bool isRagdolling = false;
+		a_player->GetGraphVariableBool("isRagdolling", isRagdolling);
+		if (isRagdolling) return true;
+
+		bool isGetUpBegin = false;
+		a_player->GetGraphVariableBool("GetUpBegin", isGetUpBegin);
+		if (isGetUpBegin) return true;
+
+		// Paralysis (actor value > 0 means paralyzed)
+		if (a_player->AsActorValueOwner() &&
+			a_player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kParalysis) > 0.0f) {
 			return true;
+		}
+
+		// Camera not in first person (e.g. death cam, bleedout, VATS-like)
+		auto* camera = RE::PlayerCamera::GetSingleton();
+		if (camera && !camera->IsInFirstPerson()) return true;
+
+		// Menus that should cancel lean
+		auto* ui = RE::UI::GetSingleton();
+		if (ui) {
+			if (ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME) ||
+				ui->IsMenuOpen(RE::Console::MENU_NAME) ||
+				ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME) ||
+				ui->GameIsPaused()) {
+				return true;
+			}
 		}
 
 		return false;
@@ -274,6 +324,8 @@ namespace Lean
 		auto* player = RE::PlayerCharacter::GetSingleton();
 		if (!player || !settings->leanContextualEnabled) {
 			contextualTarget = 0.0f;
+			contextualRawTarget = 0.0f;
+			contextualDisengageTimer = 0.0f;
 			contextualHoldTimer = 0.0f;
 			contextualWasActive = false;
 			return;
@@ -284,6 +336,8 @@ namespace Lean
 				if (dbg && s_leanLogThrottle == 0)
 					logger::info("[Lean] Contextual skipped: gamepadOnly=true but last input was keyboard/mouse");
 				contextualTarget = 0.0f;
+				contextualRawTarget = 0.0f;
+				contextualDisengageTimer = 0.0f;
 				contextualHoldTimer = 0.0f;
 				return;
 			}
@@ -404,17 +458,40 @@ namespace Lean
 
 		if (wallLeft && !wallRight) {
 			float proximity = 1.0f - bestHitFraction;
-			contextualTarget = std::clamp(proximity / (1.0f - deadzone), 0.0f, 1.0f);
+			contextualRawTarget = std::clamp(proximity / (1.0f - deadzone), 0.0f, 1.0f);
 		} else if (wallRight && !wallLeft) {
 			float proximity = 1.0f - bestHitFraction;
-			contextualTarget = -std::clamp(proximity / (1.0f - deadzone), 0.0f, 1.0f);
+			contextualRawTarget = -std::clamp(proximity / (1.0f - deadzone), 0.0f, 1.0f);
 		} else {
-			contextualTarget = 0.0f;
+			contextualRawTarget = 0.0f;
+		}
+
+		// Hysteresis: prevent rapid on/off toggling from gaps in geometry (fences, etc.)
+		// When raw target is non-zero, update immediately.
+		// When raw target drops to zero, wait a short delay before disengaging.
+		constexpr float kDisengageDelay = 0.15f;
+		constexpr float kSmoothSpeed = 12.0f;
+
+		if (std::abs(contextualRawTarget) > 0.001f) {
+			contextualDisengageTimer = kDisengageDelay;
+			// Smooth toward raw target to avoid frame-to-frame jitter
+			float smoothBlend = std::min(kSmoothSpeed * a_delta, 0.9f);
+			contextualTarget += (contextualRawTarget - contextualTarget) * smoothBlend;
+		} else {
+			// Raw says disengage — count down before actually dropping
+			contextualDisengageTimer -= a_delta;
+			if (contextualDisengageTimer <= 0.0f) {
+				// Smooth toward zero
+				float smoothBlend = std::min(kSmoothSpeed * a_delta, 0.9f);
+				contextualTarget += (0.0f - contextualTarget) * smoothBlend;
+				if (std::abs(contextualTarget) < 0.01f) contextualTarget = 0.0f;
+			}
+			// else: hold the last contextualTarget value during the delay
 		}
 
 		if (dbg && s_leanLogThrottle == 0) {
-			logger::info("[Lean] Contextual rays: C={} ({:.3f}) L={} ({:.3f}) R={} ({:.3f}) dz={:.2f} → target={:.3f}",
-				hitCenter, centerHit, hitLeft, leftHit, hitRight, rightHit, deadzone, contextualTarget);
+			logger::info("[Lean] Contextual rays: C={} ({:.3f}) L={} ({:.3f}) R={} ({:.3f}) dz={:.2f} raw={:.3f} → target={:.3f} disengage={:.3f}",
+				hitCenter, centerHit, hitLeft, leftHit, hitRight, rightHit, deadzone, contextualRawTarget, contextualTarget, contextualDisengageTimer);
 		}
 	}
 
@@ -431,9 +508,10 @@ namespace Lean
 			if (settings->debugLogging && a_data.shooter) {
 				auto* player = RE::PlayerCharacter::GetSingleton();
 				if (player && a_data.shooter == player) {
-					logger::info("[Lean] HookedLaunch fired: leaning={} leanVal={:.3f} spell={} origin=({:.0f},{:.0f},{:.0f})",
+					logger::info("[Lean] HookedLaunch fired: leaning={} leanVal={:.3f} spell={} castSrc={} origin=({:.0f},{:.0f},{:.0f})",
 						leanMgr->IsLeaning(), leanMgr->GetLeanCurrent(),
 						a_data.spell ? a_data.spell->GetName() : "none",
+						static_cast<int>(a_data.castingSource),
 						a_data.origin.x, a_data.origin.y, a_data.origin.z);
 				}
 			}
@@ -444,19 +522,46 @@ namespace Lean
 					auto* camera = RE::PlayerCamera::GetSingleton();
 					if (camera && camera->cameraRoot) {
 						auto& rot = camera->cameraRoot->world.rotate;
-						RE::NiPoint3 camRight   = { rot.entry[0][0], rot.entry[1][0], rot.entry[2][0] };
 						RE::NiPoint3 camForward  = { rot.entry[0][1], rot.entry[1][1], rot.entry[2][1] };
 
-						float leanVal = leanMgr->GetLeanCurrent();
-						float intensity = settings->leanIntensity;
-						// Match the camera offset amount so projectiles originate from
-						// where the player sees their weapon/hand (the skeleton lean is
-						// visual-only and doesn't affect gameplay node reads).
-						float lateralAmount = leanVal * settings->leanPosAmount * intensity;
+						bool usedHandOrigin = false;
 
-						a_data.origin.x += camRight.x * lateralAmount;
-						a_data.origin.y += camRight.y * lateralAmount;
-						a_data.origin.z += camRight.z * lateralAmount;
+						// Magic spells: optionally spawn from the actual hand node
+						if (a_data.spell && settings->leanMagicUseHandOrigin) {
+							const char* handNodeName = nullptr;
+							if (a_data.castingSource == RE::MagicSystem::CastingSource::kLeftHand) {
+								handNodeName = "NPC L MagicNode [LMag]";
+							} else if (a_data.castingSource == RE::MagicSystem::CastingSource::kRightHand) {
+								handNodeName = "NPC R MagicNode [RMag]";
+							}
+
+							if (handNodeName) {
+								auto* fp3D = player->Get3D(true);
+								if (fp3D) {
+									auto* handNode = fp3D->GetObjectByName(handNodeName);
+									if (handNode) {
+										a_data.origin = handNode->world.translate;
+										usedHandOrigin = true;
+										if (settings->debugLogging)
+											logger::info("[Lean] Magic: using {} origin ({:.0f},{:.0f},{:.0f})",
+												handNodeName, a_data.origin.x, a_data.origin.y, a_data.origin.z);
+									}
+								}
+							}
+						}
+
+						// For non-magic (arrows/bolts) or if hand origin wasn't used:
+						// offset the origin laterally by the lean amount
+						if (!usedHandOrigin) {
+							RE::NiPoint3 camRight = { rot.entry[0][0], rot.entry[1][0], rot.entry[2][0] };
+							float leanVal = leanMgr->GetLeanCurrent();
+							float intensity = settings->leanIntensity;
+							float lateralAmount = leanVal * settings->leanPosAmount * intensity;
+
+							a_data.origin.x += camRight.x * lateralAmount;
+							a_data.origin.y += camRight.y * lateralAmount;
+							a_data.origin.z += camRight.z * lateralAmount;
+						}
 
 						// Raycast from camera center to find crosshair target point
 						RE::NiPoint3 camPos = camera->cameraRoot->world.translate;
@@ -491,25 +596,31 @@ namespace Lean
 							}
 						}
 
-						// Re-aim projectile from shifted origin toward the crosshair target
-						RE::NiPoint3 dir = {
-							targetPoint.x - a_data.origin.x,
-							targetPoint.y - a_data.origin.y,
-							targetPoint.z - a_data.origin.z
-						};
-						float len = std::sqrt(dir.x * dir.x + dir.y * dir.y + dir.z * dir.z);
-						if (len > 0.01f) {
-							dir.x /= len;
-							dir.y /= len;
-							dir.z /= len;
+						// Re-aim projectile from its origin toward the crosshair target
+						// Skip angle override if TDM/SmoothCam will redirect: when desiredTarget is
+						// already set (TDM lock-on) or when in third person (SmoothCam flight path).
+						// Those mods operate post-launch and will set their own angles/velocity.
+						bool skipAngleOverride = (a_data.desiredTarget != nullptr);
+						if (!skipAngleOverride) {
+							RE::NiPoint3 dir = {
+								targetPoint.x - a_data.origin.x,
+								targetPoint.y - a_data.origin.y,
+								targetPoint.z - a_data.origin.z
+							};
+							float len = std::sqrt(dir.x * dir.x + dir.y * dir.y + dir.z * dir.z);
+							if (len > 0.01f) {
+								dir.x /= len;
+								dir.y /= len;
+								dir.z /= len;
 
-							a_data.angleZ = std::atan2(dir.x, dir.y);
-							a_data.angleX = std::asin(-dir.z);
+								a_data.angleZ = std::atan2(dir.x, dir.y);
+								a_data.angleX = std::asin(-dir.z);
+							}
 						}
 
 						if (settings->debugLogging) {
-							logger::info("[Lean] Projectile: shifted by {:.1f}, origin=({:.0f},{:.0f},{:.0f}) aimed at ({:.0f},{:.0f},{:.0f}), angleZ={:.3f} angleX={:.3f}",
-								lateralAmount, a_data.origin.x, a_data.origin.y, a_data.origin.z,
+							logger::info("[Lean] Projectile: hand={} skipAngle={} origin=({:.0f},{:.0f},{:.0f}) aimed at ({:.0f},{:.0f},{:.0f}), angleZ={:.3f} angleX={:.3f}",
+								usedHandOrigin, skipAngleOverride, a_data.origin.x, a_data.origin.y, a_data.origin.z,
 								targetPoint.x, targetPoint.y, targetPoint.z, a_data.angleZ, a_data.angleX);
 						}
 					}

@@ -1819,6 +1819,16 @@ namespace Menu
 					MarkSettingsChanged();
 				}
 				
+				if (settings->leanContextualMagic) {
+					if (CheckboxWithTooltip("Magic: Use Hand Origin##CtxLean", &settings->leanMagicUseHandOrigin,
+						"When enabled, spells spawn from the actual hand node position\n"
+						"(left or right depending on equipped slot) and are aimed toward\n"
+						"the crosshair. When disabled, spells use a simple lateral offset\n"
+						"like arrows/bolts.")) {
+						MarkSettingsChanged();
+					}
+				}
+				
 				ImGui::TreePop();
 			} else {
 				ImGui::PopStyleColor();
@@ -1882,15 +1892,14 @@ namespace Menu
 				}
 				
 				ImGui::Separator();
+				ImGui::BeginDisabled(true);
+				ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Third-person body lean is under development.");
 				ImGui::Text("Third Person:");
-				if (CheckboxWithTooltip("Enable 3P Body##Lean", &settings->leanThirdPersonEnabled,
-					"Apply lean rotation to third-person body spine bones.")) {
-					MarkSettingsChanged();
-				}
-				if (SliderFloatWithTooltip("3P Scale##Lean", &settings->leanThirdPersonScale, 0.0f, 3.0f, "%.2f",
-					"Scale multiplier for third-person body lean.")) {
-					MarkSettingsChanged();
-				}
+				bool tp_dummy = false;
+				ImGui::Checkbox("Enable 3P Body##Lean", &tp_dummy);
+				float tp_scale_dummy = 1.0f;
+				ImGui::SliderFloat("3P Scale##Lean", &tp_scale_dummy, 0.0f, 3.0f, "%.2f");
+				ImGui::EndDisabled();
 				
 				ImGui::TreePop();
 			} else {

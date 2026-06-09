@@ -60,6 +60,8 @@ namespace Lean
 		bool toggledRight{ false };
 
 		float contextualTarget{ 0.0f };
+		float contextualRawTarget{ 0.0f };     // Unfiltered raycast result
+		float contextualDisengageTimer{ 0.0f }; // Hysteresis: delay before disengaging
 		mutable float contextualHoldTimer{ 0.0f };  // Generic hold timer for all ranged weapons
 		mutable bool  contextualWasActive{ false };  // Was in ranged stance last frame
 

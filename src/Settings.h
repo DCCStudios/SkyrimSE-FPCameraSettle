@@ -315,6 +315,7 @@ public:
 	bool  leanContextualCrossbow{ true };
 	bool  leanContextualMagic{ true };
 	float leanContextualHoldTime{ 0.5f };  // Hold lean briefly after firing/casting ends
+	bool  leanMagicUseHandOrigin{ true };  // Spawn spells from the actual hand node position
 
 	// Camera offsets
 	float leanPosAmount{ 12.0f };

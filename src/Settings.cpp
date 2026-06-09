@@ -764,6 +764,7 @@ void Settings::Load()
 	leanContextualHoldTime = static_cast<float>(ini.GetDoubleValue("Lean_Contextual", "fHoldTime",
 		ini.GetDoubleValue("Lean_Contextual", "fMagicHoldTime", leanContextualHoldTime)));
 	leanContextualHoldTime = std::clamp(leanContextualHoldTime, 0.0f, 3.0f);
+	leanMagicUseHandOrigin = ini.GetBoolValue("Lean_Contextual", "bMagicUseHandOrigin", leanMagicUseHandOrigin);
 
 	leanPosAmount = static_cast<float>(ini.GetDoubleValue("Lean_Camera", "fPosAmount", leanPosAmount));
 	leanPosAmount = std::clamp(leanPosAmount, 0.0f, 30.0f);
@@ -1019,6 +1020,7 @@ void Settings::Save()
 	ini.SetBoolValue("Lean_Contextual", "bCrossbow", leanContextualCrossbow, "; Contextual lean while aiming crossbow");
 	ini.SetBoolValue("Lean_Contextual", "bMagic", leanContextualMagic, "; Contextual lean while casting spells");
 	ini.SetDoubleValue("Lean_Contextual", "fHoldTime", leanContextualHoldTime, "; Seconds to hold lean after firing/casting ends");
+	ini.SetBoolValue("Lean_Contextual", "bMagicUseHandOrigin", leanMagicUseHandOrigin, "; Spawn spells from actual hand node position");
 
 	ini.SetDoubleValue("Lean_Camera", "fPosAmount", leanPosAmount, "; Lateral camera shift (units)");
 	ini.SetDoubleValue("Lean_Camera", "fRollDegrees", leanRollDegrees, "; Head tilt roll (degrees)");

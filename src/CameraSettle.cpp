@@ -1837,7 +1837,7 @@ namespace CameraSettle
 		if (settings->leanEnabled) {
 			auto* leanMgr = Lean::LeanManager::GetSingleton();
 			float leanVal = leanMgr->GetLeanCurrent();
-			if (std::abs(leanVal) > 0.001f) {
+			if (std::abs(leanVal) > 0.001f && a_camera->IsInFirstPerson()) {
 				float intensity = settings->leanIntensity;
 
 				totalRotOffset.y += leanVal * settings->leanRollDegrees * DEG_TO_RAD * intensity;
@@ -2024,6 +2024,10 @@ namespace CameraSettle
 		float leanVal = leanMgr->GetLeanCurrent();
 		if (std::abs(leanVal) < 0.001f) return;
 
+		// Safety: verify camera is still in first person before touching skeleton
+		auto* camera = RE::PlayerCamera::GetSingleton();
+		if (!camera || !camera->IsInFirstPerson()) return;
+
 		int nodeIdx = std::clamp(settings->leanFirstPersonNode, 0, 2);
 		auto* spineObj = a_fpObject->GetObjectByName(kSpineNodeNames[nodeIdx]);
 		// Fallback through other spine bones if the selected one doesn't exist
@@ -2053,60 +2057,14 @@ namespace CameraSettle
 		if (settings->debugLogging && s_skelLogThrottle == 0)
 			logger::info("[Lean] 1P applied: lean={:.3f} roll={:.3f}deg shift={:.2f} bone={}",
 				leanVal, rollAngle * RAD_TO_DEG, lateralShift, spineObj->name.c_str());
-	}
-
-	// Frame-gen safe: apply 3P skeleton lean BEFORE the engine's Update() call
-	// Uses local-space roll (around bone's forward/Y axis) distributed across spine bones.
-	void CameraSettleManager::ApplyLean3P(RE::NiAVObject* a_tpObject)
-	{
-		auto* settings = Settings::GetSingleton();
-		if (!settings->leanEnabled || !settings->leanThirdPersonEnabled || !a_tpObject) return;
-
-		auto* leanMgr = Lean::LeanManager::GetSingleton();
-		float leanVal = leanMgr->GetLeanCurrent();
-		if (std::abs(leanVal) < 0.001f) return;
-
-		float totalRoll = leanVal * settings->leanRollDegrees * DEG_TO_RAD *
-		                  settings->leanIntensity * settings->leanThirdPersonScale;
-		float perBone = totalRoll / 3.0f;
-
-		const char* spineNames[] = {
-			"NPC Spine [Spn0]",
-			"NPC Spine1 [Spn1]",
-			"NPC Spine2 [Spn2]"
-		};
-
-		int bonesModified = 0;
-		for (const char* name : spineNames) {
-			auto* obj = a_tpObject->GetObjectByName(name);
-			if (!obj) continue;
-			auto* node = obj->AsNode();
-			if (!node) continue;
-
-			// Roll around the bone's local Y axis (forward in Skyrim skeleton convention)
-			RE::NiMatrix3 rollMat = EulerToMatrix(0.0f, perBone, 0.0f);
-			node->local.rotate = node->local.rotate * rollMat;
-			bonesModified++;
-		}
-
-		// Lateral translation on the lowest spine
-		auto* spine0 = a_tpObject->GetObjectByName("NPC Spine [Spn0]");
-		if (spine0) {
-			auto* s0node = spine0->AsNode();
-			if (s0node) {
-				float latShift = leanVal * settings->leanPosAmount *
-				                 settings->leanIntensity * settings->leanThirdPersonScale * 0.5f;
-				// Local X is the bone's lateral axis
-				s0node->local.translate.x += latShift;
-			}
-		}
-
-		if (settings->debugLogging && s_skelLogThrottle == 0)
-			logger::info("[Lean] 3P applied: lean={:.3f} totalRoll={:.3f}deg perBone={:.3f}deg bones={} obj={}",
-				leanVal, totalRoll * RAD_TO_DEG, perBone * RAD_TO_DEG, bonesModified,
-				a_tpObject->name.c_str());
 
 		s_skelLogThrottle = (s_skelLogThrottle + 1) % 60;
+	}
+
+	// Third-person body lean — disabled for now (under development)
+	void CameraSettleManager::ApplyLean3P([[maybe_unused]] RE::NiAVObject* a_tpObject)
+	{
+		// Intentionally empty — 3P body lean is not supported in this version
 	}
 	
 	void CameraSettleManager::Reset()
@@ -2454,14 +2412,14 @@ namespace CameraSettle
 
 	void Install()
 	{
-		// Allocate trampoline space (main update + camera update + projectile launch + 1P/3P anim)
+		// Allocate trampoline space (main update + camera update + projectile launch + 1P anim)
 		SKSE::GetTrampoline().create(192);
 		
 		// Install hooks
 		Hook::MainUpdateHook::Install();
 		Hook::CameraUpdateHook::Install();
 		Hook::UpdateFirstPersonHook::Install();
-		Hook::UpdateThirdPersonHook::Install();
+		// 3P hook not installed — third-person body lean is disabled for now
 		Lean::InstallProjectileHook();
 		
 		// Initialize sprint blur IMOD
