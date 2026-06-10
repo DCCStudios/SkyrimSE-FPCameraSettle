@@ -424,6 +424,41 @@ namespace CameraSettle
 		return (fwd1 && back2) || (back1 && fwd2) || (left1 && right2) || (right1 && left2);
 	}
 	
+	// Maps an axis direction to the appropriate action for the current movement state
+	ActionType GetActionForDirection(bool a_isSprinting, bool a_isSneaking, bool a_isWalking,
+		bool a_forward, bool a_backward, bool a_left, bool a_right)
+	{
+		if (a_isSprinting && a_forward) return ActionType::SprintForward;
+		
+		if (a_isSneaking) {
+			if (!a_isWalking) {
+				if (a_forward)  return ActionType::SneakRunForward;
+				if (a_backward) return ActionType::SneakRunBackward;
+				if (a_left)     return ActionType::SneakRunLeft;
+				if (a_right)    return ActionType::SneakRunRight;
+			} else {
+				if (a_forward)  return ActionType::SneakWalkForward;
+				if (a_backward) return ActionType::SneakWalkBackward;
+				if (a_left)     return ActionType::SneakWalkLeft;
+				if (a_right)    return ActionType::SneakWalkRight;
+			}
+		}
+		
+		if (!a_isWalking) {
+			if (a_forward)  return ActionType::RunForward;
+			if (a_backward) return ActionType::RunBackward;
+			if (a_left)     return ActionType::RunLeft;
+			if (a_right)    return ActionType::RunRight;
+		} else {
+			if (a_forward)  return ActionType::WalkForward;
+			if (a_backward) return ActionType::WalkBackward;
+			if (a_left)     return ActionType::WalkLeft;
+			if (a_right)    return ActionType::WalkRight;
+		}
+		
+		return ActionType::kTotal;
+	}
+
 	ActionType CameraSettleManager::DetectMovementAction(RE::PlayerCharacter* a_player)
 	{
 		auto* playerControls = RE::PlayerControls::GetSingleton();
@@ -433,7 +468,6 @@ namespace CameraSettle
 		
 		RE::NiPoint2 inputVec = playerControls->data.moveInputVec;
 		
-		// Threshold for movement detection
 		constexpr float THRESHOLD = 0.3f;
 		
 		bool movingForward = inputVec.y > THRESHOLD;
@@ -441,50 +475,74 @@ namespace CameraSettle
 		bool movingLeft = inputVec.x < -THRESHOLD;
 		bool movingRight = inputVec.x > THRESHOLD;
 		
+		if (!movingForward && !movingBackward && !movingLeft && !movingRight)
+			return ActionType::kTotal;
+		
 		auto* actorState = a_player->AsActorState();
 		bool isSprinting = actorState->IsSprinting();
 		bool isSneaking = actorState->IsSneaking();
-		// IsWalking() returns true if the walk/run toggle is set to walk
-		// If not walking, player runs when moving
 		bool isWalking = actorState->IsWalking();
 		
-		// Determine action based on movement
-		if (isSprinting && movingForward) {
-			return ActionType::SprintForward;
-		}
+		// For diagonal movement, return the dominant axis as the primary action
+		// (used for state tracking and impulse triggers)
+		float absX = std::abs(inputVec.x);
+		float absY = std::abs(inputVec.y);
 		
-		// Handle sneak movement
-		if (isSneaking) {
-			if (!isWalking) {
-				// Sneak running
-				if (movingForward) return ActionType::SneakRunForward;
-				if (movingBackward) return ActionType::SneakRunBackward;
-				if (movingLeft) return ActionType::SneakRunLeft;
-				if (movingRight) return ActionType::SneakRunRight;
-			} else {
-				// Sneak walking
-				if (movingForward) return ActionType::SneakWalkForward;
-				if (movingBackward) return ActionType::SneakWalkBackward;
-				if (movingLeft) return ActionType::SneakWalkLeft;
-				if (movingRight) return ActionType::SneakWalkRight;
-			}
-		}
-		
-		// Normal (not sneaking) movement
-		// If walking flag is not set, player runs
-		if (!isWalking) {
-			if (movingForward) return ActionType::RunForward;
-			if (movingBackward) return ActionType::RunBackward;
-			if (movingLeft) return ActionType::RunLeft;
-			if (movingRight) return ActionType::RunRight;
+		if (absY >= absX) {
+			return GetActionForDirection(isSprinting, isSneaking, isWalking,
+				movingForward, movingBackward, false, false);
 		} else {
-			if (movingForward) return ActionType::WalkForward;
-			if (movingBackward) return ActionType::WalkBackward;
-			if (movingLeft) return ActionType::WalkLeft;
-			if (movingRight) return ActionType::WalkRight;
+			return GetActionForDirection(isSprinting, isSneaking, isWalking,
+				false, false, movingLeft, movingRight);
+		}
+	}
+	
+	// Returns blended settings for diagonal movement.
+	// Both axes of the input vector contribute, weighted by their magnitudes.
+	ActionSettings CameraSettleManager::GetDiagonalBlendedSettings(
+		const std::function<const ActionSettings&(ActionType)>& a_getSettings,
+		bool a_isSprinting, bool a_isSneaking, bool a_isWalking,
+		const RE::NiPoint2& a_inputVec)
+	{
+		constexpr float THRESHOLD = 0.3f;
+		float absX = std::abs(a_inputVec.x);
+		float absY = std::abs(a_inputVec.y);
+		
+		bool hasY = absY > THRESHOLD;
+		bool hasX = absX > THRESHOLD;
+		
+		ActionType fwdBackAction = ActionType::kTotal;
+		ActionType lateralAction = ActionType::kTotal;
+		
+		if (hasY) {
+			fwdBackAction = GetActionForDirection(a_isSprinting, a_isSneaking, a_isWalking,
+				a_inputVec.y > 0, a_inputVec.y < 0, false, false);
+		}
+		if (hasX) {
+			lateralAction = GetActionForDirection(a_isSprinting, a_isSneaking, a_isWalking,
+				false, false, a_inputVec.x < 0, a_inputVec.x > 0);
 		}
 		
-		return ActionType::kTotal;  // No movement
+		// Single axis — return that action's settings directly
+		if (hasY && !hasX && fwdBackAction != ActionType::kTotal)
+			return a_getSettings(fwdBackAction);
+		if (hasX && !hasY && lateralAction != ActionType::kTotal)
+			return a_getSettings(lateralAction);
+		
+		// Diagonal — blend both axes
+		if (hasY && hasX && fwdBackAction != ActionType::kTotal && lateralAction != ActionType::kTotal) {
+			float total = absX + absY;
+			float xWeight = absX / total;
+			return ActionSettings::Blend(a_getSettings(fwdBackAction), a_getSettings(lateralAction), xWeight);
+		}
+		
+		// Fallback
+		if (fwdBackAction != ActionType::kTotal) return a_getSettings(fwdBackAction);
+		if (lateralAction != ActionType::kTotal) return a_getSettings(lateralAction);
+		
+		// Should not reach here
+		ActionSettings def;
+		return def;
 	}
 	
 	void CameraSettleManager::DetectActions(RE::PlayerCharacter* a_player, float a_delta)
@@ -775,9 +833,19 @@ namespace CameraSettle
 			}
 		};
 		
+		// Diagonal-aware settings: blends fwd/back + left/right based on input vector
+		RE::NiPoint2 diagInputVec = { 0.0f, 0.0f };
+		if (playerControls) diagInputVec = playerControls->data.moveInputVec;
+		
+		auto getDiagonalSettings = [&]() -> ActionSettings {
+			return GetDiagonalBlendedSettings(
+				getCachedBlendedSettings,
+				isSprinting, isSneaking, actorState->IsWalking(), diagInputVec);
+		};
+		
 		// Detect walk/run state change while moving
 		if (isMoving && wasMoving && wasWalking != isWalking && movementDebounce <= 0.0f) {
-			const ActionSettings& blendedSettings = getCachedBlendedSettings(currentMovement);
+			ActionSettings blendedSettings = getDiagonalSettings();
 			ApplyImpulse(movementSpring, movementBlend, blendedSettings, globalMult * 0.3f, settings);
 			timeSinceAction = 0.0f;
 			movementDebounce = 0.1f;
@@ -809,7 +877,7 @@ namespace CameraSettle
 				}
 			} else {
 				// Normal case - apply impulse immediately
-				const ActionSettings& moveSettings = getCachedBlendedSettings(currentMovement);
+				ActionSettings moveSettings = getDiagonalSettings();
 				ApplyImpulse(movementSpring, movementBlend, moveSettings, globalMult, settings);
 				timeSinceAction = 0.0f;
 				if (settings->debugLogging) logger::info("[FPCameraSettle] Action: {} Start (blend={:.2f}, weapon={})", Settings::GetActionName(currentMovement), walkRunBlend, weaponDrawn ? "drawn" : "sheathed");
@@ -830,7 +898,7 @@ namespace CameraSettle
 		         !walkImpulseBlocked && settings->speedBasedBlending && movementDebounce <= 0.0f) {
 			// Grace period just ended and player is still walking - apply the walk impulse now
 			if (walkRunBlend < 0.5f) {
-				const ActionSettings& moveSettings = getCachedBlendedSettings(currentMovement);
+				ActionSettings moveSettings = getDiagonalSettings();
 				ApplyImpulse(movementSpring, movementBlend, moveSettings, globalMult, settings);
 				timeSinceAction = 0.0f;
 				movementDebounce = 0.1f;
@@ -891,7 +959,7 @@ namespace CameraSettle
 				
 				// Apply the new direction's impulse at reduced strength
 				// The dampened velocity + reduced impulse = smooth transition
-				const ActionSettings& moveSettings = getCachedBlendedSettings(currentMovement);
+				ActionSettings moveSettings = getDiagonalSettings();
 				ApplyImpulse(movementSpring, movementBlend, moveSettings, globalMult * 0.25f, settings);
 				
 				// Longer debounce for opposite directions to prevent rapid oscillation
@@ -904,7 +972,7 @@ namespace CameraSettle
 			} else {
 				// === NORMAL DIRECTION CHANGE (e.g., forward to left) ===
 				// These don't fight as much, apply normal impulse
-				const ActionSettings& moveSettings = getCachedBlendedSettings(currentMovement);
+				ActionSettings moveSettings = getDiagonalSettings();
 				ApplyImpulse(movementSpring, movementBlend, moveSettings, globalMult * 0.5f, settings);
 				movementDebounce = 0.1f;
 				
@@ -930,6 +998,34 @@ namespace CameraSettle
 		}
 		currentMovementAction = currentMovement;
 		wasWeaponDrawn = weaponDrawn;
+		
+		// === SUSTAINED ACTION ROLL ===
+		// Blend roll target from both input axes for diagonal support
+		if (isMoving && currentMovement != ActionType::kTotal) {
+			ActionSettings diagSettings = getDiagonalSettings();
+			if (diagSettings.enabled && std::abs(diagSettings.rollDegrees) > 0.001f) {
+				actionRollTarget = diagSettings.rollDegrees * diagSettings.multiplier * globalMult;
+				actionRollBlendIn = std::max(diagSettings.rollBlendIn, 0.01f);
+				actionRollBlendOut = std::max(diagSettings.rollBlendOut, 0.01f);
+			} else {
+				actionRollTarget = 0.0f;
+			}
+		} else {
+			actionRollTarget = 0.0f;
+		}
+		
+		// Blend current roll toward target using exponential smoothing.
+		// tau * 0.3 gives ~95% convergence after 'tau' seconds.
+		if (std::abs(actionRollTarget - actionRollCurrent) > 0.0005f) {
+			bool blendingIn = (std::abs(actionRollTarget) >= std::abs(actionRollCurrent)) &&
+			                  (actionRollTarget == 0.0f ? false : true);
+			if (actionRollTarget == 0.0f) blendingIn = false;
+			float tau = blendingIn ? actionRollBlendIn : actionRollBlendOut;
+			float alpha = 1.0f - std::exp(-a_delta / (tau * 0.3f));
+			actionRollCurrent += (actionRollTarget - actionRollCurrent) * alpha;
+			if (std::abs(actionRollTarget - actionRollCurrent) < 0.01f)
+				actionRollCurrent = actionRollTarget;
+		}
 	}
 	
 	RE::BSEventNotifyControl CameraSettleManager::ProcessEvent(const RE::TESHitEvent* a_event, RE::BSTEventSource<RE::TESHitEvent>*)
@@ -1830,6 +1926,11 @@ namespace CameraSettle
 			movementSpring.rotationOffset.z + jumpSpring.rotationOffset.z + sneakSpring.rotationOffset.z + hitSpring.rotationOffset.z + archerySpring.rotationOffset.z + idleNoiseRotation.z + movementNoiseRotation.z + fallRot.z
 		};
 		
+		// Per-action sustained roll (additive, independent of springs)
+		if (std::abs(actionRollCurrent) > 0.001f) {
+			totalRotOffset.y += actionRollCurrent * DEG_TO_RAD;
+		}
+		
 		// === LEAN CAMERA OFFSETS ===
 		// Rotation offsets are applied via post-multiply so they are already in camera-local
 		// space. Position offsets must be rotated into world space because
@@ -2084,6 +2185,8 @@ namespace CameraSettle
 		
 		currentMovementAction = ActionType::kTotal;
 		lastMovementAction = ActionType::kTotal;
+		actionRollCurrent = 0.0f;
+		actionRollTarget = 0.0f;
 		wasWeaponDrawn = false;
 		wasSprinting = false;
 		wasSneaking = false;

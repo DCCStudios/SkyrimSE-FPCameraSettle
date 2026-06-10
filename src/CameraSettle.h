@@ -3,6 +3,7 @@
 #include "Settings.h"
 #include "PrecisionAPI.h"
 #include "Lean.h"
+#include <functional>
 
 namespace CameraSettle
 {
@@ -148,9 +149,21 @@ namespace CameraSettle
 		PendingBlend hitBlend;
 		PendingBlend archeryBlend;
 		
+		// Diagonal blending: returns settings blended from both input axes
+		ActionSettings GetDiagonalBlendedSettings(
+			const std::function<const ActionSettings&(ActionType)>& a_getSettings,
+			bool a_isSprinting, bool a_isSneaking, bool a_isWalking,
+			const RE::NiPoint2& a_inputVec);
+		
 		// Active action tracking
 		ActionType currentMovementAction{ ActionType::kTotal };
 		ActionType lastMovementAction{ ActionType::kTotal };
+		
+		// Per-action sustained camera roll (independent of springs)
+		float actionRollCurrent{ 0.0f };   // Current blended roll angle in degrees
+		float actionRollTarget{ 0.0f };    // Target roll for the active action
+		float actionRollBlendIn{ 0.2f };   // Blend-in speed (from current action settings)
+		float actionRollBlendOut{ 0.3f };  // Blend-out speed (from last action settings)
 		
 		// State tracking
 		bool isInFirstPerson{ false };

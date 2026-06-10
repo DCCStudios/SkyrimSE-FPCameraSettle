@@ -252,15 +252,17 @@ namespace Lean
 			}
 		}
 
-		// Magic: actively casting
+		// Magic: actively casting (right, left, or dual)
 		if (!activelyAiming && settings->leanContextualMagic) {
 			bool castingRight = false;
 			bool castingLeft = false;
+			bool castingDual = false;
 			a_player->GetGraphVariableBool("IsCastingRight", castingRight);
-			a_player->GetGraphVariableBool("IsCastingDual", castingLeft);
-			if (castingRight || castingLeft) {
+			a_player->GetGraphVariableBool("IsCastingLeft", castingLeft);
+			a_player->GetGraphVariableBool("IsCastingDual", castingDual);
+			if (castingRight || castingLeft || castingDual) {
 				if (dbg && s_leanLogThrottle == 0)
-					logger::info("[Lean] RangedStance: MAGIC casting (R={} L={})", castingRight, castingLeft);
+					logger::info("[Lean] RangedStance: MAGIC casting (R={} L={} D={})", castingRight, castingLeft, castingDual);
 				activelyAiming = true;
 			}
 		}
@@ -508,8 +510,8 @@ namespace Lean
 			if (settings->debugLogging && a_data.shooter) {
 				auto* player = RE::PlayerCharacter::GetSingleton();
 				if (player && a_data.shooter == player) {
-					logger::info("[Lean] HookedLaunch fired: leaning={} leanVal={:.3f} spell={} castSrc={} origin=({:.0f},{:.0f},{:.0f})",
-						leanMgr->IsLeaning(), leanMgr->GetLeanCurrent(),
+					logger::info("[Lean] HookedLaunch: enabled={} leaning={} leanVal={:.3f} spell={} castSrc={} origin=({:.0f},{:.0f},{:.0f})",
+						settings->leanEnabled, leanMgr->IsLeaning(), leanMgr->GetLeanCurrent(),
 						a_data.spell ? a_data.spell->GetName() : "none",
 						static_cast<int>(a_data.castingSource),
 						a_data.origin.x, a_data.origin.y, a_data.origin.z);
@@ -524,47 +526,75 @@ namespace Lean
 						auto& rot = camera->cameraRoot->world.rotate;
 						RE::NiPoint3 camForward  = { rot.entry[0][1], rot.entry[1][1], rot.entry[2][1] };
 
-						bool usedHandOrigin = false;
+						RE::NiPoint3 camRight = { rot.entry[0][0], rot.entry[1][0], rot.entry[2][0] };
+						RE::NiPoint3 camPos = camera->cameraRoot->world.translate;
 
-						// Magic spells: optionally spawn from the actual hand node
+						float leanVal = leanMgr->GetLeanCurrent();
+						float intensity = settings->leanPosAmount;
+						float lateralShift = leanVal * intensity;
+
+						// Determine origin based on spell vs arrow and user toggle
+						bool usedNodeOrigin = false;
 						if (a_data.spell && settings->leanMagicUseHandOrigin) {
-							const char* handNodeName = nullptr;
-							if (a_data.castingSource == RE::MagicSystem::CastingSource::kLeftHand) {
-								handNodeName = "NPC L MagicNode [LMag]";
-							} else if (a_data.castingSource == RE::MagicSystem::CastingSource::kRightHand) {
-								handNodeName = "NPC R MagicNode [RMag]";
+							// Use skeleton hand or magic node as base origin
+							const char* nodeName = nullptr;
+							auto castSrc = a_data.castingSource;
+							if (settings->leanMagicUseMagicNodes) {
+								nodeName = (castSrc == RE::MagicSystem::CastingSource::kLeftHand)
+									? "NPC L MagicNode [LMag]" : "NPC R MagicNode [RMag]";
+							} else {
+								nodeName = (castSrc == RE::MagicSystem::CastingSource::kLeftHand)
+									? "NPC L Hand [LHnd]" : "NPC R Hand [RHnd]";
 							}
 
-							if (handNodeName) {
-								auto* fp3D = player->Get3D(true);
-								if (fp3D) {
-									auto* handNode = fp3D->GetObjectByName(handNodeName);
-									if (handNode) {
-										a_data.origin = handNode->world.translate;
-										usedHandOrigin = true;
-										if (settings->debugLogging)
-											logger::info("[Lean] Magic: using {} origin ({:.0f},{:.0f},{:.0f})",
-												handNodeName, a_data.origin.x, a_data.origin.y, a_data.origin.z);
-									}
-								}
+							auto* root = player->Get3D(true);
+							auto* node = root ? root->GetObjectByName(nodeName) : nullptr;
+							if (node) {
+								a_data.origin = node->world.translate;
+								usedNodeOrigin = true;
+								if (settings->debugLogging)
+									logger::info("[Lean] Projectile: using node '{}' origin ({:.0f},{:.0f},{:.0f})",
+										nodeName, a_data.origin.x, a_data.origin.y, a_data.origin.z);
 							}
 						}
 
-						// For non-magic (arrows/bolts) or if hand origin wasn't used:
-						// offset the origin laterally by the lean amount
-						if (!usedHandOrigin) {
-							RE::NiPoint3 camRight = { rot.entry[0][0], rot.entry[1][0], rot.entry[2][0] };
-							float leanVal = leanMgr->GetLeanCurrent();
-							float intensity = settings->leanIntensity;
-							float lateralAmount = leanVal * settings->leanPosAmount * intensity;
+						if (!usedNodeOrigin) {
+							// Fallback: camera-based origin (also used for arrows)
+							constexpr float kDropBelowCamera = 15.0f;
+							RE::NiPoint3 camUp = { rot.entry[0][2], rot.entry[1][2], rot.entry[2][2] };
+							a_data.origin.x = camPos.x - camUp.x * kDropBelowCamera;
+							a_data.origin.y = camPos.y - camUp.y * kDropBelowCamera;
+							a_data.origin.z = camPos.z - camUp.z * kDropBelowCamera;
+							if (settings->debugLogging)
+								logger::info("[Lean] Projectile: camera-based origin ({:.0f},{:.0f},{:.0f})",
+									a_data.origin.x, a_data.origin.y, a_data.origin.z);
+						}
 
-							a_data.origin.x += camRight.x * lateralAmount;
-							a_data.origin.y += camRight.y * lateralAmount;
-							a_data.origin.z += camRight.z * lateralAmount;
+						// Apply lean lateral shift to whichever origin we chose
+						a_data.origin.x += camRight.x * lateralShift;
+						a_data.origin.y += camRight.y * lateralShift;
+						a_data.origin.z += camRight.z * lateralShift;
+
+						// Additional magic-specific offset slider (extra fine-tuning)
+						if (a_data.spell && std::abs(settings->leanMagicOriginOffset) > 0.01f) {
+							float extraOffset = settings->leanMagicOriginOffset * leanVal;
+							a_data.origin.x += camRight.x * extraOffset;
+							a_data.origin.y += camRight.y * extraOffset;
+							a_data.origin.z += camRight.z * extraOffset;
+						}
+
+						// Tell the engine to use our origin instead of computing its own
+						a_data.useOrigin = true;
+						a_data.autoAim = false;
+
+						if (settings->debugLogging) {
+							logger::info("[Lean] Projectile: final origin ({:.0f},{:.0f},{:.0f}) leanVal={:.2f} shift={:.1f} nodeOrigin={}",
+								a_data.origin.x, a_data.origin.y, a_data.origin.z,
+								leanVal, lateralShift, usedNodeOrigin);
 						}
 
 						// Raycast from camera center to find crosshair target point
-						RE::NiPoint3 camPos = camera->cameraRoot->world.translate;
+						// (camPos already defined above)
 						constexpr float kMaxDist = 10000.0f;
 						RE::NiPoint3 targetPoint = {
 							camPos.x + camForward.x * kMaxDist,
@@ -619,8 +649,8 @@ namespace Lean
 						}
 
 						if (settings->debugLogging) {
-							logger::info("[Lean] Projectile: hand={} skipAngle={} origin=({:.0f},{:.0f},{:.0f}) aimed at ({:.0f},{:.0f},{:.0f}), angleZ={:.3f} angleX={:.3f}",
-								usedHandOrigin, skipAngleOverride, a_data.origin.x, a_data.origin.y, a_data.origin.z,
+							logger::info("[Lean] Projectile: skipAngle={} origin=({:.0f},{:.0f},{:.0f}) aimed at ({:.0f},{:.0f},{:.0f}), angleZ={:.3f} angleX={:.3f}",
+								skipAngleOverride, a_data.origin.x, a_data.origin.y, a_data.origin.z,
 								targetPoint.x, targetPoint.y, targetPoint.z, a_data.angleZ, a_data.angleX);
 						}
 					}

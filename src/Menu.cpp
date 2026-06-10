@@ -1819,14 +1819,33 @@ namespace Menu
 					MarkSettingsChanged();
 				}
 				
-				if (settings->leanContextualMagic) {
-					if (CheckboxWithTooltip("Magic: Use Hand Origin##CtxLean", &settings->leanMagicUseHandOrigin,
-						"When enabled, spells spawn from the actual hand node position\n"
-						"(left or right depending on equipped slot) and are aimed toward\n"
-						"the crosshair. When disabled, spells use a simple lateral offset\n"
-						"like arrows/bolts.")) {
+				ImGui::Spacing();
+				ImGui::Text("Magic Projectile Origin:");
+				
+				if (CheckboxWithTooltip("Use Skeleton Node##MagicOrigin", &settings->leanMagicUseHandOrigin,
+					"When enabled, spells spawn from a skeleton node (hand or magic node)\n"
+					"and are aimed toward the crosshair. When disabled, spells use a\n"
+					"simple lateral offset like arrows/bolts.")) {
+					MarkSettingsChanged();
+				}
+				
+				if (settings->leanMagicUseHandOrigin) {
+					if (CheckboxWithTooltip("Use Magic Nodes##MagicOrigin", &settings->leanMagicUseMagicNodes,
+						"When checked, uses MagicNode bones (NPC L/R MagicNode).\n"
+						"When unchecked, uses Hand bones (NPC L/R Hand).\n"
+						"Try toggling if spells spawn from the wrong position.")) {
 						MarkSettingsChanged();
 					}
+				}
+				
+				if (SliderFloatWithTooltip("Origin Offset##MagicOrigin", &settings->leanMagicOriginOffset,
+					-50.0f, 50.0f, "%.1f",
+					"Extra lateral offset (in Skyrim units) applied to the magic\n"
+					"projectile origin. Positive shifts further in the lean direction.\n"
+					"Applied regardless of whether skeleton node is used.\n"
+					"Use to fine-tune where spells appear to launch from.")) {
+					settings->leanMagicOriginOffset = std::clamp(settings->leanMagicOriginOffset, -50.0f, 50.0f);
+					MarkSettingsChanged();
 				}
 				
 				ImGui::TreePop();
@@ -2268,6 +2287,32 @@ namespace Menu
 			ImGui::TreePop();
 		}
 		
+		// Sustained camera roll
+		if (ImGui::TreeNodeEx("Sustained Roll", ImGuiTreeNodeFlags_None)) {
+			ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Steady camera tilt while this action is active");
+			
+			if (SliderFloatWithTooltip("Roll (deg)", &settings.rollDegrees, -10.0f, 10.0f, "%.1f",
+				"Sustained roll angle in degrees (+tilt right, -tilt left).\nSmooth blend in/out, additive on top of all other effects.\n0 = disabled.")) {
+				MarkSettingsChanged();
+			}
+			
+			if (std::abs(settings.rollDegrees) > 0.001f) {
+				if (SliderFloatWithTooltip("Blend In", &settings.rollBlendIn, 0.01f, 2.0f, "%.2fs",
+					"Seconds to blend in to the target roll when action starts")) {
+					settings.rollBlendIn = std::clamp(settings.rollBlendIn, 0.01f, 2.0f);
+					MarkSettingsChanged();
+				}
+				
+				if (SliderFloatWithTooltip("Blend Out", &settings.rollBlendOut, 0.01f, 2.0f, "%.2fs",
+					"Seconds to blend out when the action stops")) {
+					settings.rollBlendOut = std::clamp(settings.rollBlendOut, 0.01f, 2.0f);
+					MarkSettingsChanged();
+				}
+			}
+			
+			ImGui::TreePop();
+		}
+		
 		// Reset button and Copy button
 		ImGui::Spacing();
 		if (ImGui::Button("Reset to Defaults")) {
@@ -2284,6 +2329,9 @@ namespace Menu
 			settings.rotImpulseX = 0.0f;
 			settings.rotImpulseY = 0.0f;
 			settings.rotImpulseZ = 0.0f;
+			settings.rollDegrees = 0.0f;
+			settings.rollBlendIn = 0.2f;
+			settings.rollBlendOut = 0.3f;
 			MarkSettingsChanged();
 		}
 		if (ImGui::IsItemHovered()) {

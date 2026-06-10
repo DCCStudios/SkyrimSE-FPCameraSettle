@@ -50,6 +50,11 @@ void ActionSettings::Load(CSimpleIniA& a_ini, const char* a_section)
 	rotImpulseX = static_cast<float>(a_ini.GetDoubleValue(a_section, "fRotImpulseX", rotImpulseX));
 	rotImpulseY = static_cast<float>(a_ini.GetDoubleValue(a_section, "fRotImpulseY", rotImpulseY));
 	rotImpulseZ = static_cast<float>(a_ini.GetDoubleValue(a_section, "fRotImpulseZ", rotImpulseZ));
+	rollDegrees = static_cast<float>(a_ini.GetDoubleValue(a_section, "fRollDegrees", rollDegrees));
+	rollBlendIn = static_cast<float>(a_ini.GetDoubleValue(a_section, "fRollBlendIn", rollBlendIn));
+	rollBlendIn = std::clamp(rollBlendIn, 0.01f, 2.0f);
+	rollBlendOut = static_cast<float>(a_ini.GetDoubleValue(a_section, "fRollBlendOut", rollBlendOut));
+	rollBlendOut = std::clamp(rollBlendOut, 0.01f, 2.0f);
 }
 
 void ActionSettings::Save(CSimpleIniA& a_ini, const char* a_section) const
@@ -67,6 +72,9 @@ void ActionSettings::Save(CSimpleIniA& a_ini, const char* a_section) const
 	a_ini.SetDoubleValue(a_section, "fRotImpulseX", rotImpulseX, "; Pitch impulse (+look up, -look down)");
 	a_ini.SetDoubleValue(a_section, "fRotImpulseY", rotImpulseY, "; Roll impulse (+tilt right, -tilt left)");
 	a_ini.SetDoubleValue(a_section, "fRotImpulseZ", rotImpulseZ, "; Yaw impulse (+look left, -look right)");
+	a_ini.SetDoubleValue(a_section, "fRollDegrees", rollDegrees, "; Sustained camera roll while action active (+right, -left)");
+	a_ini.SetDoubleValue(a_section, "fRollBlendIn", rollBlendIn, "; Seconds to blend in to target roll");
+	a_ini.SetDoubleValue(a_section, "fRollBlendOut", rollBlendOut, "; Seconds to blend out when action stops");
 }
 
 void ActionSettings::CopyFrom(const ActionSettings& other)
@@ -84,6 +92,9 @@ void ActionSettings::CopyFrom(const ActionSettings& other)
 	rotImpulseX = other.rotImpulseX;
 	rotImpulseY = other.rotImpulseY;
 	rotImpulseZ = other.rotImpulseZ;
+	rollDegrees = other.rollDegrees;
+	rollBlendIn = other.rollBlendIn;
+	rollBlendOut = other.rollBlendOut;
 }
 
 ActionSettings ActionSettings::Blend(const ActionSettings& a, const ActionSettings& b, float t)
@@ -106,6 +117,9 @@ ActionSettings ActionSettings::Blend(const ActionSettings& a, const ActionSettin
 	result.rotImpulseX = a.rotImpulseX * invT + b.rotImpulseX * t;
 	result.rotImpulseY = a.rotImpulseY * invT + b.rotImpulseY * t;
 	result.rotImpulseZ = a.rotImpulseZ * invT + b.rotImpulseZ * t;
+	result.rollDegrees = a.rollDegrees * invT + b.rollDegrees * t;
+	result.rollBlendIn = a.rollBlendIn * invT + b.rollBlendIn * t;
+	result.rollBlendOut = a.rollBlendOut * invT + b.rollBlendOut * t;
 	return result;
 }
 
@@ -765,6 +779,9 @@ void Settings::Load()
 		ini.GetDoubleValue("Lean_Contextual", "fMagicHoldTime", leanContextualHoldTime)));
 	leanContextualHoldTime = std::clamp(leanContextualHoldTime, 0.0f, 3.0f);
 	leanMagicUseHandOrigin = ini.GetBoolValue("Lean_Contextual", "bMagicUseHandOrigin", leanMagicUseHandOrigin);
+	leanMagicUseMagicNodes = ini.GetBoolValue("Lean_Contextual", "bMagicUseMagicNodes", leanMagicUseMagicNodes);
+	leanMagicOriginOffset = static_cast<float>(ini.GetDoubleValue("Lean_Contextual", "fMagicOriginOffset", leanMagicOriginOffset));
+	leanMagicOriginOffset = std::clamp(leanMagicOriginOffset, -50.0f, 50.0f);
 
 	leanPosAmount = static_cast<float>(ini.GetDoubleValue("Lean_Camera", "fPosAmount", leanPosAmount));
 	leanPosAmount = std::clamp(leanPosAmount, 0.0f, 30.0f);
@@ -1020,7 +1037,9 @@ void Settings::Save()
 	ini.SetBoolValue("Lean_Contextual", "bCrossbow", leanContextualCrossbow, "; Contextual lean while aiming crossbow");
 	ini.SetBoolValue("Lean_Contextual", "bMagic", leanContextualMagic, "; Contextual lean while casting spells");
 	ini.SetDoubleValue("Lean_Contextual", "fHoldTime", leanContextualHoldTime, "; Seconds to hold lean after firing/casting ends");
-	ini.SetBoolValue("Lean_Contextual", "bMagicUseHandOrigin", leanMagicUseHandOrigin, "; Spawn spells from actual hand node position");
+	ini.SetBoolValue("Lean_Contextual", "bMagicUseHandOrigin", leanMagicUseHandOrigin, "; Spawn spells from skeleton hand/magic node position");
+	ini.SetBoolValue("Lean_Contextual", "bMagicUseMagicNodes", leanMagicUseMagicNodes, "; true = use MagicNode, false = use Hand bone");
+	ini.SetDoubleValue("Lean_Contextual", "fMagicOriginOffset", leanMagicOriginOffset, "; Extra lateral offset for magic projectile origin (units)");
 
 	ini.SetDoubleValue("Lean_Camera", "fPosAmount", leanPosAmount, "; Lateral camera shift (units)");
 	ini.SetDoubleValue("Lean_Camera", "fRollDegrees", leanRollDegrees, "; Head tilt roll (degrees)");

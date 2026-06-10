@@ -49,6 +49,11 @@ struct ActionSettings
 	float rotImpulseY{ 0.0f };       // Initial rotation impulse (yaw)
 	float rotImpulseZ{ 0.0f };       // Initial rotation impulse (roll)
 	
+	// Sustained camera roll while this action is active (independent of springs)
+	float rollDegrees{ 0.0f };       // Steady-state roll in degrees (+right, -left), 0 = disabled
+	float rollBlendIn{ 0.2f };       // Seconds to blend in to target roll
+	float rollBlendOut{ 0.3f };      // Seconds to blend out when action stops
+	
 	void Load(CSimpleIniA& a_ini, const char* a_section);
 	void Save(CSimpleIniA& a_ini, const char* a_section) const;
 	
@@ -315,7 +320,9 @@ public:
 	bool  leanContextualCrossbow{ true };
 	bool  leanContextualMagic{ true };
 	float leanContextualHoldTime{ 0.5f };  // Hold lean briefly after firing/casting ends
-	bool  leanMagicUseHandOrigin{ true };  // Spawn spells from the actual hand node position
+	bool  leanMagicUseHandOrigin{ true };   // Spawn spells from skeleton hand/magic node position
+	bool  leanMagicUseMagicNodes{ false };  // true = NPC L/R MagicNode, false = NPC L/R Hand
+	float leanMagicOriginOffset{ 0.0f };   // Extra lateral offset for magic projectile origin (Skyrim units)
 
 	// Camera offsets
 	float leanPosAmount{ 12.0f };
